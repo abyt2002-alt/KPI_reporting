@@ -1,0 +1,98 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Inter', system-ui, sans-serif;
+  
+  /* Primary */
+  --color-primary: #FFBD59;
+  --color-primary-light: #FFCF87;
+  --color-primary-lighter: #FFE7C2;
+  --color-primary-lightest: #FFF2DF;
+  
+  /* Secondary */
+  --color-green: #41C185;
+  --color-blue: #458EE2;
+  
+  /* Neutrals */
+  --color-text: #333333;
+  --color-text-muted: #666666;
+  --color-text-light: #999999;
+  
+  /* Backgrounds */
+  --color-bg: #FFFFFF;
+  --color-bg-alt: #F5F5F5;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg-alt);
+  color: var(--color-text);
+}
+
+/* Custom scrollbar */
+.scrollbar-thin::-webkit-scrollbar {
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: #F5F5F5;
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: #D0D0D0;
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: #BBBBBB;
+}
+
+/* Date Picker Styling */
+.react-datepicker {
+  font-family: var(--font-sans) !important;
+  border: 1px solid #E5E5E5 !important;
+  border-radius: 12px !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1) !important;
+}
+
+.react-datepicker__header {
+  background: #FFBD59 !important;
+  border-bottom: none !important;
+  border-radius: 12px 12px 0 0 !important;
+  padding-top: 12px !important;
+}
+
+.react-datepicker__current-month {
+  color: #333333 !important;
+  font-weight: 600 !important;
+}
+
+.react-datepicker__day-name {
+  color: #333333 !important;
+  font-weight: 500 !important;
+}
+
+.react-datepicker__day--selected,
+.react-datepicker__day--in-selecting-range,
+.react-datepicker__day--in-range {
+  background-color: #FFBD59 !important;
+  color: #333333 !important;
+}
+
+.react-datepicker__day--keyboard-selected {
+  background-color: #FFE7C2 !important;
+  color: #333333 !important;
+}
+
+.react-datepicker__day:hover {
+  background-color: #FFF2DF !important;
+}
+
+.react-datepicker__navigation-icon::before {
+  border-color: #333333 !important;
+}
+
+.react-datepicker__triangle {
+  display: none !important;
+}
