@@ -237,6 +237,60 @@ export async function analyzeUploadFile(file: File): Promise<ApiResponse<UploadA
   }
 }
 
+export interface KpiSummaryMetric {
+  label: string;
+  value: number;
+  formatted_value: string;
+  trend_percent: number | null;
+  kind: string;
+}
+
+export interface KpiSummaryResponse {
+  headline: string;
+  overview: string;
+  insights: string[];
+  actions: string[];
+  watchout: string;
+  model_used: string;
+}
+
+export async function generateKpiSummary(params: {
+  time_range: string;
+  market: string;
+  category: string;
+  source: string;
+  metrics: KpiSummaryMetric[];
+}): Promise<ApiResponse<KpiSummaryResponse>> {
+  return fetchApi('/analysis/kpi-summary', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  }, 60000);
+}
+
+export async function generateKpiCompareSummary(params: {
+  left: {
+    label: string;
+    time_range: string;
+    market: string;
+    category: string;
+    source: string;
+    metrics: KpiSummaryMetric[];
+  };
+  right: {
+    label: string;
+    time_range: string;
+    market: string;
+    category: string;
+    source: string;
+    metrics: KpiSummaryMetric[];
+  };
+}): Promise<ApiResponse<KpiSummaryResponse>> {
+  return fetchApi('/analysis/kpi-compare-summary', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  }, 60000);
+}
+
 /**
  * Run prediction model
  */
