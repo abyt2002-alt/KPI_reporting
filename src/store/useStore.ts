@@ -202,6 +202,8 @@ export interface User {
 export type Theme = 'light' | 'dark' | 'auto';
 export type SummaryTimeRange = 'yesterday' | 'last_7' | 'last_13' | 'last_30' | 'last_90' | 'last_180' | 'last_365' | 'custom';
 export type SummaryMarketFilter = 'all' | 'US' | 'UK' | 'UAE';
+export type SummaryCategoryFilter = 'all' | 'ring' | 'necklace' | 'bracelet' | 'earring';
+export type SummarySourceFilter = 'all' | 'shopify' | 'amazon';
 
 interface AppState {
   // Auth state
@@ -218,9 +220,11 @@ interface AppState {
   currentReportItems: ReportItem[];
   // Saved reports
   savedReports: SavedReport[];
-  activeTab: 'upload' | 'summary' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports';
+  activeTab: 'upload' | 'summary' | 'campaign_assessment' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports';
   summaryTimeRange: SummaryTimeRange;
   summaryMarketFilter: SummaryMarketFilter;
+  summaryCategoryFilter: SummaryCategoryFilter;
+  summarySourceFilter: SummarySourceFilter;
   summaryStartDate: string;
   summaryEndDate: string;
   ingestionModalSource: IngestionSource | null;
@@ -251,9 +255,11 @@ interface AppState {
   addChart: (chart: ChartConfig) => void;
   removeChart: (id: string) => void;
   updateChart: (id: string, updates: Partial<ChartConfig>) => void;
-  setActiveTab: (tab: 'upload' | 'summary' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports') => void;
+  setActiveTab: (tab: 'upload' | 'summary' | 'campaign_assessment' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports') => void;
   setSummaryTimeRange: (range: SummaryTimeRange) => void;
   setSummaryMarketFilter: (market: SummaryMarketFilter) => void;
+  setSummaryCategoryFilter: (category: SummaryCategoryFilter) => void;
+  setSummarySourceFilter: (source: SummarySourceFilter) => void;
   setSummaryDateRange: (startDate: string, endDate: string) => void;
   // Report item actions
   updateReportItemComment: (itemId: string, comment: string) => void;
@@ -384,6 +390,8 @@ export const useStore = create<AppState>()(
       activeTab: 'upload',
       summaryTimeRange: 'last_30',
       summaryMarketFilter: 'all',
+      summaryCategoryFilter: 'all',
+      summarySourceFilter: 'all',
       summaryStartDate: FY25_DEFAULT_CUSTOM_START,
       summaryEndDate: FY25_DEFAULT_CUSTOM_END,
       ingestionModalSource: null,
@@ -419,6 +427,8 @@ export const useStore = create<AppState>()(
       setActiveTab: (activeTab) => set({ activeTab }),
       setSummaryTimeRange: (summaryTimeRange) => set({ summaryTimeRange }),
       setSummaryMarketFilter: (summaryMarketFilter) => set({ summaryMarketFilter }),
+      setSummaryCategoryFilter: (summaryCategoryFilter) => set({ summaryCategoryFilter }),
+      setSummarySourceFilter: (summarySourceFilter) => set({ summarySourceFilter }),
       setSummaryDateRange: (summaryStartDate, summaryEndDate) => set({ summaryStartDate, summaryEndDate }),
       updateChartForm: (updates) => set((s) => ({ chartForm: { ...s.chartForm, ...updates } })),
       resetChartFormTitle: () => set((s) => ({ chartForm: { ...s.chartForm, title: '' } })),
@@ -486,6 +496,8 @@ export const useStore = create<AppState>()(
         activeTab: 'upload',
         summaryTimeRange: 'last_30',
         summaryMarketFilter: 'all',
+        summaryCategoryFilter: 'all',
+        summarySourceFilter: 'all',
         summaryStartDate: FY25_DEFAULT_CUSTOM_START,
         summaryEndDate: FY25_DEFAULT_CUSTOM_END,
         ingestionModalSource: null,
@@ -520,6 +532,8 @@ export const useStore = create<AppState>()(
         activeTab: state.activeTab,
         summaryTimeRange: state.summaryTimeRange,
         summaryMarketFilter: state.summaryMarketFilter,
+        summaryCategoryFilter: state.summaryCategoryFilter,
+        summarySourceFilter: state.summarySourceFilter,
         summaryStartDate: state.summaryStartDate,
         summaryEndDate: state.summaryEndDate,
         chartForm: state.chartForm,
@@ -560,7 +574,7 @@ export const useStore = create<AppState>()(
         correlationLag: state.correlationLag,
         selectedCorrelation: state.selectedCorrelation,
       }),
-      version: 4, // Increment to force localStorage reset
+      version: 5, // Increment to force localStorage reset
       migrate: (persistedState: unknown, version: number) => {
         if (version < 4) {
           // Reset to defaults for new state structure
@@ -570,10 +584,19 @@ export const useStore = create<AppState>()(
             isIngestionModalOpen: false,
             summaryTimeRange: 'last_30',
             summaryMarketFilter: 'all',
+            summaryCategoryFilter: 'all',
+            summarySourceFilter: 'all',
             summaryStartDate: FY25_DEFAULT_CUSTOM_START,
             summaryEndDate: FY25_DEFAULT_CUSTOM_END,
             kalmanState: { ...defaultKalmanState },
             modelingState: { ...defaultModelingState },
+          } as AppState;
+        }
+        if (version < 5) {
+          return {
+            ...(persistedState as Record<string, unknown>),
+            summaryCategoryFilter: 'all',
+            summarySourceFilter: 'all',
           } as AppState;
         }
         return persistedState as AppState;

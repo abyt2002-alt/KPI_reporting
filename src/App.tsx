@@ -2,6 +2,7 @@ import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
 import { UploadPage } from './modules/UploadPage';
 import { SummaryPage } from './modules/SummaryPage';
+import { CampaignAssessmentPage } from './modules/CampaignAssessmentPage';
 import { RoasPlaygroundPage } from './modules/RoasPlaygroundPage';
 import { LoginPage } from './modules/LoginPage';
 import { useStore } from './store/useStore';
@@ -22,6 +23,7 @@ function App() {
         <Header />
         <main className="flex-1 overflow-auto">
           {activeTab === "summary" ? <SummaryPage /> : null}
+          {activeTab === "campaign_assessment" ? <CampaignAssessmentPage /> : null}
           {activeTab === "roas_playground" ? <RoasPlaygroundPage /> : null}
           {activeTab === "upload" ? <UploadPage /> : null}
         </main>

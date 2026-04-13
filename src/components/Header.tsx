@@ -1,8 +1,10 @@
-import { User, LogOut, Moon, Sun, Monitor, Minimize2, Maximize2, ChevronDown, Check, CalendarDays, BarChart3 } from "lucide-react";
+import { User, LogOut, Moon, Sun, Monitor, Minimize2, Maximize2, ChevronDown, Check, CalendarDays, BarChart3, ShoppingBag, Tag } from "lucide-react";
 import { useStore } from "../store/useStore";
 import { useState, useRef, useEffect } from "react";
-import type { Theme, SummaryMarketFilter, SummaryTimeRange } from "../store/useStore";
+import type { Theme, SummaryCategoryFilter, SummaryMarketFilter, SummarySourceFilter, SummaryTimeRange } from "../store/useStore";
 import { FY25_END_DATE, FY25_START_DATE } from "../modules/summaryConfig";
+import amazonImage from "../../image_resources/amazon.jpg";
+import shopifyImage from "../../image_resources/shopify.jpg";
 
 const SUMMARY_TIME_OPTIONS: Array<{ value: SummaryTimeRange; label: string }> = [
   { value: "yesterday", label: "Yesterday" },
@@ -22,6 +24,20 @@ const SUMMARY_MARKET_OPTIONS: Array<{ value: SummaryMarketFilter; label: string 
   { value: "UAE", label: "UAE" },
 ];
 
+const SUMMARY_CATEGORY_OPTIONS: Array<{ value: SummaryCategoryFilter; label: string }> = [
+  { value: "all", label: "All products" },
+  { value: "ring", label: "Ring" },
+  { value: "necklace", label: "Necklace" },
+  { value: "bracelet", label: "Bracelet" },
+  { value: "earring", label: "Earring" },
+];
+
+const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string; image?: string }> = [
+  { value: "all", label: "All sources" },
+  { value: "shopify", label: "Shopify", image: shopifyImage },
+  { value: "amazon", label: "Amazon", image: amazonImage },
+];
+
 export function Header() {
   const {
     user,
@@ -33,10 +49,14 @@ export function Header() {
     activeTab,
     summaryTimeRange,
     summaryMarketFilter,
+    summaryCategoryFilter,
+    summarySourceFilter,
     summaryStartDate,
     summaryEndDate,
     setSummaryTimeRange,
     setSummaryMarketFilter,
+    setSummaryCategoryFilter,
+    setSummarySourceFilter,
     setSummaryDateRange,
   } = useStore();
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -72,6 +92,7 @@ export function Header() {
   ];
 
   const isSummary = activeTab === "summary";
+  const isCampaignAssessment = activeTab === "campaign_assessment";
   const isRoasPlayground = activeTab === "roas_playground";
   const isCustomSummaryRange = isSummary && summaryTimeRange === "custom";
 
@@ -86,15 +107,17 @@ export function Header() {
 
   return (
     <>
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 shadow-sm">
+      <header className="min-h-16 bg-white border-b border-slate-200 flex items-center justify-between gap-4 px-6 py-2 shadow-sm">
         <div className="flex items-center gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-800">
-              {isSummary ? "Summary Workspace" : isRoasPlayground ? "ROAS Playground" : "Ingestion Workspace"}
+              {isSummary ? "Summary Workspace" : isCampaignAssessment ? "Campaign Assessment" : isRoasPlayground ? "ROAS Playground" : "Ingestion Workspace"}
             </h2>
             <p className="text-xs text-slate-500">
               {isSummary
                 ? "Time/market KPI view with daily trend drill-downs"
+                : isCampaignAssessment
+                  ? "Counterfactual campaign lift and spend reallocation demo"
                 : isRoasPlayground
                   ? "Tool-style ROAS scenario testing and configuration"
                   : "Source setup and ingestion workflow connected to backend"}
@@ -102,7 +125,7 @@ export function Header() {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
           {isSummary ? (
             <>
               <label className="group relative">
@@ -166,6 +189,49 @@ export function Header() {
                 </select>
                 <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
               </label>
+
+              <label className="group relative">
+                <Tag size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                <select
+                  value={summaryCategoryFilter}
+                  onChange={(event) => setSummaryCategoryFilter(event.target.value as SummaryCategoryFilter)}
+                  className="appearance-none rounded-xl border border-slate-300 bg-white py-2 pl-9 pr-10 text-sm font-medium text-slate-700 shadow-sm outline-none transition hover:border-slate-400 focus:border-cyan-500 focus:ring-2 focus:ring-cyan-200"
+                >
+                  {SUMMARY_CATEGORY_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={15} className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-500" />
+              </label>
+
+              <div className="flex items-center gap-1 rounded-xl border border-slate-300 bg-white p-1 shadow-sm">
+                {SUMMARY_SOURCE_OPTIONS.map((option) => {
+                  const active = summarySourceFilter === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => setSummarySourceFilter(option.value)}
+                      title={option.label}
+                      aria-label={option.label}
+                      className={`flex h-8 min-w-9 items-center justify-center rounded-lg px-2 text-xs font-semibold transition ${
+                        active ? "bg-cyan-50 text-cyan-700 ring-1 ring-cyan-300" : "text-slate-600 hover:bg-slate-50"
+                      }`}
+                    >
+                      {option.image ? (
+                        <img src={option.image} alt="" className="h-5 w-8 object-contain" />
+                      ) : (
+                        <span className="flex items-center gap-1">
+                          <ShoppingBag size={14} />
+                          All
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </>
           ) : null}
 

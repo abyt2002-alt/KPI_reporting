@@ -1,10 +1,12 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   DollarSign,
   Megaphone,
   Search,
   ShoppingCart,
+  RefreshCw,
+  SlidersHorizontal,
   Target,
   TrendingDown,
   TrendingUp,
@@ -14,8 +16,6 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
-  Bar,
-  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -24,18 +24,15 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import shopifyImage from "../../image_resources/shopify.jpg";
-import googleAnalyticsImage from "../../image_resources/ga.jpg";
-import amazonImage from "../../image_resources/amazon.jpg";
-import metaAdsImage from "../../image_resources/meta ads.jpg";
 import { useStore } from "../store/useStore";
-import type { SummaryTimeRange } from "../store/useStore";
+import type { SummaryCategoryFilter, SummaryMarketFilter, SummarySourceFilter, SummaryTimeRange } from "../store/useStore";
+import { generateKpiCompareSummary, generateKpiSummary, type KpiSummaryResponse } from "../services/api";
 import { FY25_END_DATE, FY25_START_DATE } from "./summaryConfig";
 
 type Market = "US" | "UK" | "UAE";
 type DetailTab = "bars" | "comparison" | "breakdown";
 type MetricKind = "currency" | "integer" | "percent" | "ratio" | "duration";
-type PlatformView = "shopify" | "ga" | "meta" | "amazon";
+type CompareSide = "left" | "right";
 type MetricKey =
   | "revenue"
   | "orders"
@@ -99,25 +96,30 @@ interface DailyMetricPoint {
   google_roas: number;
 }
 
-interface PlatformMetricDefinition {
-  id: string;
-  label: string;
-  kind: MetricKind;
-  accent: string;
-  rollup?: "sum" | "avg";
-  compute: (point: DailyMetricPoint) => number;
-}
-
-interface PlatformMetricCard extends PlatformMetricDefinition {
-  value: number;
+interface MetricCardView {
+  definition: MetricDefinition;
+  currentValue: number;
+  previousValue: number;
   trend: number | null;
   sparkline: Array<{ label: string; value: number }>;
 }
 
-interface PlatformOption {
-  id: PlatformView;
-  label: string;
-  image: string;
+interface SummarySelection {
+  timeRange: SummaryTimeRange;
+  market: SummaryMarketFilter;
+  category: SummaryCategoryFilter;
+  source: SummarySourceFilter;
+  startDate: string;
+  endDate: string;
+}
+
+interface SummaryView {
+  selectedDates: string[];
+  previousDates: string[];
+  currentRows: DailyMarketRow[];
+  previousRows: DailyMarketRow[];
+  dailyPoints: DailyMetricPoint[];
+  metricCards: MetricCardView[];
 }
 
 const TIME_RANGE_DAYS: Partial<Record<SummaryTimeRange, number>> = {
@@ -129,11 +131,36 @@ const TIME_RANGE_DAYS: Partial<Record<SummaryTimeRange, number>> = {
   last_365: 365,
 };
 
-const PLATFORM_OPTIONS: PlatformOption[] = [
-  { id: "shopify", label: "Shopify", image: shopifyImage },
-  { id: "ga", label: "Google Analytics", image: googleAnalyticsImage },
-  { id: "meta", label: "Meta Ads", image: metaAdsImage },
-  { id: "amazon", label: "Amazon", image: amazonImage },
+const SUMMARY_TIME_OPTIONS: Array<{ value: SummaryTimeRange; label: string }> = [
+  { value: "yesterday", label: "Yesterday" },
+  { value: "last_7", label: "Last 7 days" },
+  { value: "last_13", label: "Last 13 days" },
+  { value: "last_30", label: "Last 30 days" },
+  { value: "last_90", label: "Last 90 days" },
+  { value: "last_180", label: "Last 180 days" },
+  { value: "last_365", label: "Last 365 days" },
+  { value: "custom", label: "Custom range" },
+];
+
+const SUMMARY_MARKET_OPTIONS: Array<{ value: SummaryMarketFilter; label: string }> = [
+  { value: "all", label: "All markets" },
+  { value: "US", label: "US" },
+  { value: "UK", label: "UK" },
+  { value: "UAE", label: "UAE" },
+];
+
+const SUMMARY_CATEGORY_OPTIONS: Array<{ value: SummaryCategoryFilter; label: string }> = [
+  { value: "all", label: "All products" },
+  { value: "ring", label: "Ring" },
+  { value: "necklace", label: "Necklace" },
+  { value: "bracelet", label: "Bracelet" },
+  { value: "earring", label: "Earring" },
+];
+
+const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string }> = [
+  { value: "all", label: "All sources" },
+  { value: "shopify", label: "Shopify" },
+  { value: "amazon", label: "Amazon" },
 ];
 
 const METRIC_DEFINITIONS: MetricDefinition[] = [
@@ -153,11 +180,50 @@ const MARKET_SCALE: Record<Market, number> = {
   UAE: 0.84,
 };
 
+const CATEGORY_SCALE: Record<SummaryCategoryFilter, { demand: number; aov: number; spend: number; newCustomer: number }> = {
+  all: { demand: 1, aov: 1, spend: 1, newCustomer: 1 },
+  ring: { demand: 1, aov: 1, spend: 1, newCustomer: 1 },
+  necklace: { demand: 0.78, aov: 1.34, spend: 1.12, newCustomer: 0.94 },
+  bracelet: { demand: 1.16, aov: 0.82, spend: 0.9, newCustomer: 1.08 },
+  earring: { demand: 1.28, aov: 0.74, spend: 0.86, newCustomer: 1.12 },
+};
+
+const SOURCE_SCALE: Record<SummarySourceFilter, { revenue: number; orders: number; spend: number; googleShare: number; roas: number }> = {
+  all: { revenue: 1, orders: 1, spend: 1, googleShare: 0.56, roas: 1 },
+  shopify: { revenue: 0.68, orders: 0.72, spend: 0.38, googleShare: 0.42, roas: 1.12 },
+  amazon: { revenue: 0.34, orders: 0.31, spend: 0.26, googleShare: 0.76, roas: 0.92 },
+};
+
 const DETAIL_TAB_LABELS: Array<{ key: DetailTab; label: string }> = [
   { key: "bars", label: "Trend" },
   { key: "comparison", label: "Lagged" },
   { key: "breakdown", label: "Components" },
 ];
+
+const SUMMARY_TIME_LABELS: Record<SummaryTimeRange, string> = {
+  yesterday: "Yesterday",
+  last_7: "Last 7 days",
+  last_13: "Last 13 days",
+  last_30: "Last 30 days",
+  last_90: "Last 90 days",
+  last_180: "Last 180 days",
+  last_365: "Last 365 days",
+  custom: "Custom range",
+};
+
+const SUMMARY_CATEGORY_LABELS: Record<SummaryCategoryFilter, string> = {
+  all: "All products",
+  ring: "Ring",
+  necklace: "Necklace",
+  bracelet: "Bracelet",
+  earring: "Earring",
+};
+
+const SUMMARY_SOURCE_LABELS: Record<SummarySourceFilter, string> = {
+  all: "All sources",
+  shopify: "Shopify",
+  amazon: "Amazon",
+};
 
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 
@@ -257,6 +323,37 @@ const buildDateToRowsMap = (rows: DailyMarketRow[]) => {
   return map;
 };
 
+const applySummaryFilters = (
+  row: DailyMarketRow,
+  category: SummaryCategoryFilter,
+  source: SummarySourceFilter
+): DailyMarketRow => {
+  const categoryScale = CATEGORY_SCALE[category];
+  const sourceScale = SOURCE_SCALE[source];
+  const orders = Math.max(1, Math.round(row.orders * categoryScale.demand * sourceScale.orders));
+  const revenue = roundCurrency(row.revenue * categoryScale.demand * categoryScale.aov * sourceScale.revenue);
+  const mediaSpend = roundCurrency(row.mediaSpend * categoryScale.spend * sourceScale.spend);
+  const googleSpend = roundCurrency(mediaSpend * sourceScale.googleShare);
+  const metaSpend = roundCurrency(mediaSpend - googleSpend);
+  const googleRoas = safeDivide(row.googleRevenue, row.googleSpend) * sourceScale.roas;
+  const metaRoas = safeDivide(row.metaRevenue, row.metaSpend) * sourceScale.roas;
+  const googleRevenue = roundCurrency(googleSpend * googleRoas);
+  const metaRevenue = roundCurrency(metaSpend * metaRoas);
+  const newCustomerRate = safeDivide(row.newCustomers, row.orders) * categoryScale.newCustomer;
+
+  return {
+    ...row,
+    revenue,
+    orders,
+    mediaSpend,
+    googleSpend,
+    metaSpend,
+    googleRevenue,
+    metaRevenue,
+    newCustomers: Math.min(orders, Math.round(orders * newCustomerRate)),
+  };
+};
+
 const sampleSeries = (values: Array<{ label: string; value: number }>, maxPoints: number) => {
   if (values.length <= maxPoints) return values;
   const step = values.length / maxPoints;
@@ -281,99 +378,6 @@ const getIsoDatesBetween = (startIso: string, endIso: string) => {
   }
   return output;
 };
-
-const estimateSessions = (point: DailyMetricPoint) => point.orders * 7.6 + 620;
-const estimateUsers = (point: DailyMetricPoint) => estimateSessions(point) * 0.68;
-const estimateAddToCartSessions = (point: DailyMetricPoint) => estimateSessions(point) * (0.028 + point.new_customers_pct / 700);
-const estimateAmazonSpend = (point: DailyMetricPoint) => point.media_spend * 0.24;
-const estimateAmazonSales = (point: DailyMetricPoint) => point.revenue * 0.2;
-const estimateAmazonOrders = (point: DailyMetricPoint) => point.orders * 0.18;
-const estimateAmazonClicks = (point: DailyMetricPoint) => estimateAmazonOrders(point) * 14.2;
-const estimateAmazonImpressions = (point: DailyMetricPoint) => estimateAmazonClicks(point) * 18.5;
-const estimateMetaSpend = (point: DailyMetricPoint) => Math.max(0, point.media_spend - point.google_spend);
-const estimateMetaRevenue = (point: DailyMetricPoint) => estimateMetaSpend(point) * point.meta_roas;
-const estimateMetaClicks = (point: DailyMetricPoint) => estimateMetaSpend(point) * 5.6;
-const estimateMetaImpressions = (point: DailyMetricPoint) => estimateMetaClicks(point) * 16.4;
-
-const SHOPIFY_PLATFORM_METRICS: PlatformMetricDefinition[] = [
-  { id: "shopify_order_revenue", label: "Order Revenue", kind: "currency", accent: "#10b981", compute: (point) => point.revenue * 0.92 },
-  { id: "shopify_orders", label: "Orders", kind: "integer", accent: "#06b6d4", compute: (point) => point.orders * 0.94 },
-  { id: "shopify_returns", label: "Returns", kind: "currency", accent: "#f97316", compute: (point) => point.revenue * 0.12 },
-  { id: "shopify_taxes", label: "Taxes", kind: "currency", accent: "#6366f1", compute: (point) => point.revenue * 0.05 },
-  { id: "shopify_true_aov", label: "True AOV", kind: "currency", accent: "#0ea5e9", compute: (point) => safeDivide(point.revenue * 0.92, point.orders * 0.94) },
-  { id: "shopify_avg_order_value", label: "Average Order Value", kind: "currency", accent: "#14b8a6", compute: (point) => point.aov * 0.98 },
-  { id: "shopify_new_customers", label: "New Customers", kind: "percent", accent: "#22c55e", compute: (point) => point.new_customers_pct },
-  { id: "shopify_gross_sales", label: "Gross Sales", kind: "currency", accent: "#0284c7", compute: (point) => point.revenue * 1.06 },
-  { id: "shopify_returning_customers", label: "Returning Customers", kind: "percent", accent: "#64748b", compute: (point) => 100 - point.new_customers_pct },
-  { id: "shopify_orders_gt_zero", label: "Orders > $0", kind: "integer", accent: "#16a34a", compute: (point) => Math.max(0, point.orders - 1) },
-  { id: "shopify_new_customer_orders", label: "New Customer Orders", kind: "integer", accent: "#0d9488", compute: (point) => (point.orders * point.new_customers_pct) / 100 },
-  { id: "shopify_units_sold", label: "Units Sold", kind: "integer", accent: "#f59e0b", compute: (point) => point.orders * 1.2 },
-];
-
-const GA_PLATFORM_METRICS: PlatformMetricDefinition[] = [
-  { id: "ga_conversion_rate", label: "Conversion Rate", kind: "percent", accent: "#10b981", compute: (point) => safeDivide(point.orders, estimateSessions(point)) * 100 },
-  { id: "ga_users", label: "Users", kind: "integer", accent: "#06b6d4", compute: (point) => estimateUsers(point) },
-  { id: "ga_sessions", label: "Sessions", kind: "integer", accent: "#22c55e", compute: (point) => estimateSessions(point) },
-  { id: "ga_pages_per_session", label: "Pages per Session", kind: "ratio", accent: "#3b82f6", rollup: "avg", compute: (point) => 1.35 + point.new_customers_pct / 140 },
-  { id: "ga_session_duration", label: "Session Duration", kind: "duration", accent: "#0ea5e9", rollup: "avg", compute: (point) => 210 + point.new_customers_pct * 2.2 },
-  { id: "ga_bounce_rate", label: "Bounce Rate", kind: "percent", accent: "#64748b", rollup: "avg", compute: (point) => 62 - point.new_customers_pct * 0.22 },
-  { id: "ga_new_users", label: "New Users", kind: "integer", accent: "#14b8a6", compute: (point) => estimateUsers(point) * (point.new_customers_pct / 100) },
-  { id: "ga_new_users_pct", label: "New Users %", kind: "percent", accent: "#10b981", rollup: "avg", compute: (point) => point.new_customers_pct },
-  { id: "ga_sessions_add_to_cart", label: "Sessions with Add to Carts", kind: "integer", accent: "#06b6d4", compute: (point) => estimateAddToCartSessions(point) },
-  { id: "ga_add_to_cart_pct", label: "Add to Cart %", kind: "percent", accent: "#3b82f6", rollup: "avg", compute: (point) => safeDivide(estimateAddToCartSessions(point), estimateSessions(point)) * 100 },
-  { id: "ga_cost_per_add_to_cart", label: "Cost per Add to Cart", kind: "currency", accent: "#f59e0b", rollup: "avg", compute: (point) => safeDivide(point.media_spend, estimateAddToCartSessions(point)) },
-  { id: "ga_cost_per_session", label: "Cost per Session", kind: "currency", accent: "#8b5cf6", rollup: "avg", compute: (point) => safeDivide(point.media_spend, estimateSessions(point)) },
-];
-
-const META_PLATFORM_METRICS: PlatformMetricDefinition[] = [
-  { id: "meta_spend", label: "Meta Spend", kind: "currency", accent: "#0ea5e9", compute: (point) => estimateMetaSpend(point) },
-  { id: "meta_revenue", label: "Meta Revenue", kind: "currency", accent: "#22c55e", compute: (point) => estimateMetaRevenue(point) },
-  { id: "meta_roas", label: "Meta ROAS", kind: "ratio", accent: "#14b8a6", rollup: "avg", compute: (point) => point.meta_roas },
-  { id: "meta_clicks", label: "Meta Clicks", kind: "integer", accent: "#06b6d4", compute: (point) => estimateMetaClicks(point) },
-  { id: "meta_impressions", label: "Meta Impressions", kind: "integer", accent: "#6366f1", compute: (point) => estimateMetaImpressions(point) },
-  { id: "meta_cpc", label: "Meta CPC", kind: "currency", accent: "#8b5cf6", rollup: "avg", compute: (point) => safeDivide(estimateMetaSpend(point), estimateMetaClicks(point)) },
-  { id: "meta_ctr", label: "Meta CTR", kind: "percent", accent: "#10b981", rollup: "avg", compute: (point) => safeDivide(estimateMetaClicks(point), estimateMetaImpressions(point)) * 100 },
-  { id: "meta_cpa", label: "Meta CPA", kind: "currency", accent: "#f59e0b", rollup: "avg", compute: (point) => safeDivide(estimateMetaSpend(point), point.orders * 0.46) },
-  { id: "meta_frequency", label: "Meta Frequency", kind: "ratio", accent: "#ef4444", rollup: "avg", compute: (point) => 1.8 + point.new_customers_pct / 90 },
-];
-
-const AMAZON_PLATFORM_METRICS: PlatformMetricDefinition[] = [
-  { id: "amz_sales", label: "Sales", kind: "currency", accent: "#f59e0b", compute: (point) => estimateAmazonSales(point) },
-  { id: "amz_orders", label: "Orders", kind: "integer", accent: "#0ea5e9", compute: (point) => estimateAmazonOrders(point) },
-  { id: "amz_spend", label: "Ad Spend", kind: "currency", accent: "#ef4444", compute: (point) => estimateAmazonSpend(point) },
-  { id: "amz_roas", label: "ROAS", kind: "ratio", accent: "#10b981", compute: (point) => safeDivide(estimateAmazonSales(point), estimateAmazonSpend(point)) },
-  { id: "amz_acos", label: "ACOS", kind: "percent", accent: "#f97316", compute: (point) => safeDivide(estimateAmazonSpend(point), estimateAmazonSales(point)) * 100 },
-  { id: "amz_tacos", label: "TACOS", kind: "percent", accent: "#6366f1", compute: (point) => safeDivide(estimateAmazonSpend(point), point.revenue) * 100 },
-  { id: "amz_impressions", label: "Impressions", kind: "integer", accent: "#06b6d4", compute: (point) => estimateAmazonImpressions(point) },
-  { id: "amz_clicks", label: "Clicks", kind: "integer", accent: "#14b8a6", compute: (point) => estimateAmazonClicks(point) },
-  { id: "amz_cpc", label: "CPC", kind: "currency", accent: "#3b82f6", rollup: "avg", compute: (point) => safeDivide(estimateAmazonSpend(point), estimateAmazonClicks(point)) },
-];
-
-const rollupPlatformValues = (definition: PlatformMetricDefinition, points: DailyMetricPoint[]) => {
-  if (points.length === 0) return 0;
-  const values = points.map(definition.compute);
-  const rollup = definition.rollup ?? (definition.kind === "percent" || definition.kind === "ratio" || definition.kind === "duration" ? "avg" : "sum");
-  if (rollup === "avg") return values.reduce((sum, value) => sum + value, 0) / values.length;
-  return values.reduce((sum, value) => sum + value, 0);
-};
-
-const buildPlatformCards = (
-  definitions: PlatformMetricDefinition[],
-  currentPoints: DailyMetricPoint[],
-  previousPoints: DailyMetricPoint[]
-): PlatformMetricCard[] =>
-  definitions.map((definition) => {
-    const rawSeries = currentPoints.map((point) => ({ label: point.label, value: definition.compute(point) }));
-    const currentValue = rollupPlatformValues(definition, currentPoints);
-    const previousValue = rollupPlatformValues(definition, previousPoints);
-    const trend = previousValue === 0 ? null : ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
-    return {
-      ...definition,
-      value: currentValue,
-      trend,
-      sparkline: sampleSeries(rawSeries, 18),
-    };
-  });
 
 const buildBreakdownItems = (metric: MetricKey, totals: MetricTotals): BreakdownItem[] => {
   const returningCustomers = Math.max(0, totals.orders - totals.newCustomers);
@@ -504,14 +508,385 @@ const generateMockRows = (): DailyMarketRow[] => {
   return rows;
 };
 
+const getSelectedDatesForSelection = (allDates: string[], selection: SummarySelection) => {
+  if (allDates.length === 0) return [] as string[];
+
+  if (selection.timeRange === "custom") {
+    const start = selection.startDate < FY25_START_DATE ? FY25_START_DATE : selection.startDate;
+    const end = selection.endDate > FY25_END_DATE ? FY25_END_DATE : selection.endDate;
+    const boundedStart = start > end ? end : start;
+    return allDates.filter((date) => date >= boundedStart && date <= end);
+  }
+
+  if (selection.timeRange === "yesterday") {
+    if (allDates.length === 1) return [allDates[0]];
+    return [allDates[allDates.length - 2]];
+  }
+
+  const dayCount = TIME_RANGE_DAYS[selection.timeRange] ?? 30;
+  return allDates.slice(-dayCount);
+};
+
+const getPreviousDatesForSelection = (allDates: string[], selectedDates: string[]) => {
+  if (allDates.length === 0 || selectedDates.length === 0) return [] as string[];
+  const selectedStartIndex = allDates.indexOf(selectedDates[0]);
+  if (selectedStartIndex <= 0) return [] as string[];
+  const windowSize = selectedDates.length;
+  const previousStartIndex = Math.max(0, selectedStartIndex - windowSize);
+  return allDates.slice(previousStartIndex, selectedStartIndex);
+};
+
+const buildSummaryView = (allRows: DailyMarketRow[], allDates: string[], selection: SummarySelection): SummaryView => {
+  const selectedDates = getSelectedDatesForSelection(allDates, selection);
+  const previousDates = getPreviousDatesForSelection(allDates, selectedDates);
+  const selectedDateSet = new Set(selectedDates);
+  const previousDateSet = new Set(previousDates);
+  const marketRows = selection.market === "all" ? allRows : allRows.filter((row) => row.market === selection.market);
+  const scopedRows = marketRows.map((row) => applySummaryFilters(row, selection.category, selection.source));
+  const currentRows = scopedRows.filter((row) => selectedDateSet.has(row.date));
+  const previousRows = scopedRows.filter((row) => previousDateSet.has(row.date));
+  const currentDateMap = buildDateToRowsMap(currentRows);
+  const dailyPoints = selectedDates.map((date) => buildDailyMetricPoint(date, currentDateMap.get(date) ?? []));
+
+  const metricCards = METRIC_DEFINITIONS.map((definition) => {
+    const currentValue = calculateMetricValue(definition.key, currentRows);
+    const previousValue = calculateMetricValue(definition.key, previousRows);
+    const trend = previousValue === 0 ? null : ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
+    const sparkline = sampleSeries(dailyPoints.map((point) => ({ label: point.label, value: point[definition.key] })), 18);
+
+    return {
+      definition,
+      currentValue,
+      previousValue,
+      trend,
+      sparkline,
+    };
+  });
+
+  return { selectedDates, previousDates, currentRows, previousRows, dailyPoints, metricCards };
+};
+
+function MetricCardGrid({
+  cards,
+  dense = false,
+  onMetricClick,
+}: {
+  cards: MetricCardView[];
+  dense?: boolean;
+  onMetricClick?: (key: MetricKey) => void;
+}) {
+  return (
+    <section className={`grid gap-4 ${dense ? "sm:grid-cols-2" : "sm:grid-cols-2 xl:grid-cols-4"}`}>
+      {cards.map(({ definition, currentValue, trend, sparkline }) => {
+        const Icon = definition.icon;
+        const content = (
+          <>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-600">{definition.label}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{definition.subtitle}</p>
+              </div>
+              <div className="rounded-lg bg-slate-100 p-2 text-slate-700">
+                <Icon size={16} />
+              </div>
+            </div>
+
+            <div className="mt-4">
+              <p className={`${dense ? "text-2xl" : "text-3xl"} font-semibold tracking-tight text-slate-900`}>
+                {formatMetricValue(definition, currentValue)}
+              </p>
+              <div className="mt-1 flex items-center gap-1 text-xs font-semibold">
+                {trend !== null ? (
+                  <>
+                    {trend >= 0 ? <TrendingUp size={14} className="text-emerald-600" /> : <TrendingDown size={14} className="text-red-500" />}
+                    <span className={trend >= 0 ? "text-emerald-600" : "text-red-500"}>{Math.abs(trend).toFixed(1)}%</span>
+                    <span className="text-slate-500">vs previous range</span>
+                  </>
+                ) : (
+                  <span className="text-slate-500">No previous range available</span>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-3 h-16">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={sparkline}>
+                  <Line type="monotone" dataKey="value" stroke={definition.accent} strokeWidth={2.2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </>
+        );
+
+        const className =
+          "group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-[0_16px_35px_rgba(2,132,199,0.12)]";
+
+        if (onMetricClick) {
+          return (
+            <button key={definition.key} type="button" onClick={() => onMetricClick(definition.key)} className={className}>
+              {content}
+            </button>
+          );
+        }
+
+        return (
+          <div key={definition.key} className={className}>
+            {content}
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+function CompareFilterPanel({
+  label,
+  tone,
+  selection,
+  onChange,
+}: {
+  label: string;
+  tone: "cyan" | "emerald";
+  selection: SummarySelection;
+  onChange: (updates: Partial<SummarySelection>) => void;
+}) {
+  const accentClass =
+    tone === "cyan"
+      ? "border-cyan-200 bg-cyan-50/70 text-cyan-700"
+      : "border-emerald-200 bg-emerald-50/70 text-emerald-700";
+
+  return (
+    <div className="rounded-3xl border border-white/80 bg-white/90 p-4 shadow-[0_14px_34px_rgba(15,23,42,0.07)]">
+      <div className={`mb-4 flex items-center justify-between rounded-2xl border px-4 py-3 ${accentClass}`}>
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-[0.18em]">{label}</p>
+          <p className="mt-0.5 text-sm text-slate-600">This column controls its side of every card</p>
+        </div>
+        <SlidersHorizontal size={18} />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4 xl:grid-cols-2">
+        <label className="text-xs font-semibold text-slate-500">
+          Time
+          <select
+            value={selection.timeRange}
+            onChange={(event) => onChange({ timeRange: event.target.value as SummaryTimeRange })}
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+          >
+            {SUMMARY_TIME_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-xs font-semibold text-slate-500">
+          Region
+          <select
+            value={selection.market}
+            onChange={(event) => onChange({ market: event.target.value as SummaryMarketFilter })}
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+          >
+            {SUMMARY_MARKET_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-xs font-semibold text-slate-500">
+          Product
+          <select
+            value={selection.category}
+            onChange={(event) => onChange({ category: event.target.value as SummaryCategoryFilter })}
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+          >
+            {SUMMARY_CATEGORY_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="text-xs font-semibold text-slate-500">
+          Source
+          <select
+            value={selection.source}
+            onChange={(event) => onChange({ source: event.target.value as SummarySourceFilter })}
+            className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+          >
+            {SUMMARY_SOURCE_OPTIONS.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+
+      {selection.timeRange === "custom" ? (
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          <label className="text-xs font-semibold text-slate-500">
+            Start
+            <input
+              type="date"
+              min={FY25_START_DATE}
+              max={selection.endDate || FY25_END_DATE}
+              value={selection.startDate}
+              onChange={(event) => {
+                const startDate = event.target.value;
+                onChange({ startDate, endDate: startDate > selection.endDate ? startDate : selection.endDate });
+              }}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+            />
+          </label>
+          <label className="text-xs font-semibold text-slate-500">
+            End
+            <input
+              type="date"
+              min={selection.startDate || FY25_START_DATE}
+              max={FY25_END_DATE}
+              value={selection.endDate}
+              onChange={(event) => {
+                const endDate = event.target.value;
+                onChange({ endDate, startDate: endDate < selection.startDate ? endDate : selection.startDate });
+              }}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+            />
+          </label>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CompareMetricSplitGrid({
+  leftCards,
+  rightCards,
+  onMetricClick,
+}: {
+  leftCards: MetricCardView[];
+  rightCards: MetricCardView[];
+  onMetricClick: (key: MetricKey, side: CompareSide) => void;
+}) {
+  return (
+    <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      {leftCards.map((leftCard, index) => {
+        const rightCard = rightCards[index] ?? leftCard;
+        const Icon = leftCard.definition.icon;
+
+        return (
+          <div
+            key={leftCard.definition.key}
+            className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-[0_16px_35px_rgba(2,132,199,0.12)]"
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-700">{leftCard.definition.label}</p>
+                <p className="mt-0.5 text-xs text-slate-500">{leftCard.definition.subtitle}</p>
+              </div>
+              <div className="rounded-lg bg-slate-100 p-2 text-slate-700">
+                <Icon size={16} />
+              </div>
+            </div>
+
+            <div className="mt-4 grid grid-cols-2 divide-x divide-slate-200">
+              {[
+                { label: "View A", side: "left" as const, card: leftCard, tone: "cyan" },
+                { label: "View B", side: "right" as const, card: rightCard, tone: "emerald" },
+              ].map(({ label, side, card, tone }) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => onMetricClick(card.definition.key, side)}
+                  className={`group/side rounded-2xl py-2 text-left transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-cyan-200 ${
+                    label === "View A" ? "mr-2 pr-3" : "ml-2 pl-3"
+                  }`}
+                >
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
+                      tone === "cyan" ? "bg-cyan-50 text-cyan-700" : "bg-emerald-50 text-emerald-700"
+                    }`}
+                  >
+                    {label}
+                  </span>
+                  <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">
+                    {formatMetricValue(card.definition, card.currentValue)}
+                  </p>
+                  <div className="mt-1 flex items-center gap-1 text-[11px] font-semibold">
+                    {card.trend !== null ? (
+                      <>
+                        {card.trend >= 0 ? <TrendingUp size={12} className="text-emerald-600" /> : <TrendingDown size={12} className="text-red-500" />}
+                        <span className={card.trend >= 0 ? "text-emerald-600" : "text-red-500"}>{Math.abs(card.trend).toFixed(1)}%</span>
+                        <span className="text-slate-500">vs prev</span>
+                      </>
+                    ) : (
+                      <span className="text-slate-500">No trend</span>
+                    )}
+                  </div>
+                  <div className="mt-3 h-12">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={card.sparkline}>
+                        <Line type="monotone" dataKey="value" stroke={card.definition.accent} strokeWidth={2} dot={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.14em] text-slate-400 opacity-0 transition group-hover/side:opacity-100">
+                    Open trend
+                  </p>
+                </button>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
+const buildAiSummaryMetrics = (cards: MetricCardView[]) =>
+  cards.map(({ definition, currentValue, trend }) => ({
+    label: definition.label,
+    value: Number(currentValue.toFixed(4)),
+    formatted_value: formatMetricValue(definition, currentValue),
+    trend_percent: trend === null ? null : Number(trend.toFixed(2)),
+    kind: definition.kind,
+  }));
+
 export function SummaryPage() {
   const summaryTimeRange = useStore((state) => state.summaryTimeRange);
   const summaryMarketFilter = useStore((state) => state.summaryMarketFilter);
+  const summaryCategoryFilter = useStore((state) => state.summaryCategoryFilter);
+  const summarySourceFilter = useStore((state) => state.summarySourceFilter);
   const summaryStartDate = useStore((state) => state.summaryStartDate);
   const summaryEndDate = useStore((state) => state.summaryEndDate);
-  const [selectedPlatform, setSelectedPlatform] = useState<PlatformView>("shopify");
   const [activeMetric, setActiveMetric] = useState<MetricKey | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("bars");
+  const [aiSummary, setAiSummary] = useState<KpiSummaryResponse | null>(null);
+  const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
+  const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false);
+  const [aiSummarySignature, setAiSummarySignature] = useState<string | null>(null);
+  const [isCompareMode, setIsCompareMode] = useState(false);
+  const [activeCompareSide, setActiveCompareSide] = useState<CompareSide | null>(null);
+  const [compareLeft, setCompareLeft] = useState<SummarySelection>({
+    timeRange: "last_30",
+    market: "all",
+    category: "all",
+    source: "all",
+    startDate: FY25_START_DATE,
+    endDate: FY25_END_DATE,
+  });
+  const [compareRight, setCompareRight] = useState<SummarySelection>({
+    timeRange: "last_30",
+    market: "US",
+    category: "all",
+    source: "shopify",
+    startDate: FY25_START_DATE,
+    endDate: FY25_END_DATE,
+  });
 
   const allRows = useMemo(() => generateMockRows(), []);
 
@@ -520,97 +895,53 @@ export function SummaryPage() {
     [allRows]
   );
 
-  const selectedDates = useMemo(() => {
-    if (allDates.length === 0) return [] as string[];
-
-    if (summaryTimeRange === "custom") {
-      const start = summaryStartDate < FY25_START_DATE ? FY25_START_DATE : summaryStartDate;
-      const end = summaryEndDate > FY25_END_DATE ? FY25_END_DATE : summaryEndDate;
-      const boundedStart = start > end ? end : start;
-      return allDates.filter((date) => date >= boundedStart && date <= end);
-    }
-
-    if (summaryTimeRange === "yesterday") {
-      if (allDates.length === 1) return [allDates[0]];
-      return [allDates[allDates.length - 2]];
-    }
-
-    const dayCount = TIME_RANGE_DAYS[summaryTimeRange] ?? 30;
-    return allDates.slice(-dayCount);
-  }, [allDates, summaryEndDate, summaryStartDate, summaryTimeRange]);
-
-  const previousDates = useMemo(() => {
-    if (allDates.length === 0 || selectedDates.length === 0) return [] as string[];
-    const selectedStartIndex = allDates.indexOf(selectedDates[0]);
-    if (selectedStartIndex <= 0) return [] as string[];
-    const windowSize = selectedDates.length;
-    const previousStartIndex = Math.max(0, selectedStartIndex - windowSize);
-    return allDates.slice(previousStartIndex, selectedStartIndex);
-  }, [allDates, selectedDates]);
-
-  const selectedDateSet = useMemo(() => new Set(selectedDates), [selectedDates]);
-  const previousDateSet = useMemo(() => new Set(previousDates), [previousDates]);
-
-  const marketScopedRows = useMemo(
-    () => (summaryMarketFilter === "all" ? allRows : allRows.filter((row) => row.market === summaryMarketFilter)),
-    [allRows, summaryMarketFilter]
+  const globalSelection = useMemo<SummarySelection>(
+    () => ({
+      timeRange: summaryTimeRange,
+      market: summaryMarketFilter,
+      category: summaryCategoryFilter,
+      source: summarySourceFilter,
+      startDate: summaryStartDate,
+      endDate: summaryEndDate,
+    }),
+    [summaryCategoryFilter, summaryEndDate, summaryMarketFilter, summarySourceFilter, summaryStartDate, summaryTimeRange]
   );
 
-  const currentRows = useMemo(
-    () => marketScopedRows.filter((row) => selectedDateSet.has(row.date)),
-    [marketScopedRows, selectedDateSet]
-  );
+  const primaryView = useMemo(() => buildSummaryView(allRows, allDates, globalSelection), [allDates, allRows, globalSelection]);
+  const compareLeftView = useMemo(() => buildSummaryView(allRows, allDates, compareLeft), [allDates, allRows, compareLeft]);
+  const compareRightView = useMemo(() => buildSummaryView(allRows, allDates, compareRight), [allDates, allRows, compareRight]);
+  const selectedDates = primaryView.selectedDates;
+  const currentRows = primaryView.currentRows;
+  const dailyPoints = primaryView.dailyPoints;
+  const metricCards = primaryView.metricCards;
 
-  const previousRows = useMemo(
-    () => marketScopedRows.filter((row) => previousDateSet.has(row.date)),
-    [marketScopedRows, previousDateSet]
-  );
-
-  const currentDateMap = useMemo(() => buildDateToRowsMap(currentRows), [currentRows]);
-  const previousDateMap = useMemo(() => buildDateToRowsMap(previousRows), [previousRows]);
-
-  const dailyPoints = useMemo(
-    () => selectedDates.map((date) => buildDailyMetricPoint(date, currentDateMap.get(date) ?? [])),
-    [currentDateMap, selectedDates]
-  );
-  const previousDailyPoints = useMemo(
-    () => previousDates.map((date) => buildDailyMetricPoint(date, previousDateMap.get(date) ?? [])),
-    [previousDateMap, previousDates]
-  );
-
-  const metricCards = useMemo(
-    () =>
-      METRIC_DEFINITIONS.map((definition) => {
-        const currentValue = calculateMetricValue(definition.key, currentRows);
-        const previousValue = calculateMetricValue(definition.key, previousRows);
-        const trend = previousValue === 0 ? null : ((currentValue - previousValue) / Math.abs(previousValue)) * 100;
-
-        const rawSeries = dailyPoints.map((point) => ({ label: point.label, value: point[definition.key] }));
-        const sparkline = sampleSeries(rawSeries, 18);
-
-        return {
-          definition,
-          currentValue,
-          previousValue,
-          trend,
-          sparkline,
-        };
-      }),
-    [currentRows, previousRows, dailyPoints]
-  );
+  const openCompareMode = () => {
+    setCompareLeft(globalSelection);
+    setActiveCompareSide(null);
+    setIsCompareMode(true);
+  };
 
   const selectedMetricDefinition = useMemo(
     () => METRIC_DEFINITIONS.find((item) => item.key === activeMetric) ?? null,
     [activeMetric]
   );
 
+  const detailDailyPoints =
+    activeCompareSide === "left" ? compareLeftView.dailyPoints : activeCompareSide === "right" ? compareRightView.dailyPoints : dailyPoints;
+  const detailCurrentRows =
+    activeCompareSide === "left" ? compareLeftView.currentRows : activeCompareSide === "right" ? compareRightView.currentRows : currentRows;
+  const detailSelectedDates =
+    activeCompareSide === "left" ? compareLeftView.selectedDates : activeCompareSide === "right" ? compareRightView.selectedDates : selectedDates;
+  const detailSelection = activeCompareSide === "left" ? compareLeft : activeCompareSide === "right" ? compareRight : globalSelection;
+  const detailSideLabel = activeCompareSide === "left" ? "View A" : activeCompareSide === "right" ? "View B" : "Current view";
+
   const selectedMetricSeries = useMemo(() => {
     if (!activeMetric) return [];
-    return dailyPoints.map((point) => ({ label: point.label, value: point[activeMetric] }));
-  }, [activeMetric, dailyPoints]);
+    return detailDailyPoints.map((point) => ({ label: point.label, value: point[activeMetric] }));
+  }, [activeMetric, detailDailyPoints]);
   const selectedMetricChartSeries = useMemo(() => sampleObjects(selectedMetricSeries, 22), [selectedMetricSeries]);
 
-  const selectedMetricTotals = useMemo(() => aggregateTotals(currentRows), [currentRows]);
+  const selectedMetricTotals = useMemo(() => aggregateTotals(detailCurrentRows), [detailCurrentRows]);
 
   const selectedMetricLatest = selectedMetricSeries[selectedMetricSeries.length - 1]?.value ?? 0;
   const selectedMetricPrevious = selectedMetricSeries[selectedMetricSeries.length - 2]?.value ?? 0;
@@ -633,142 +964,336 @@ export function SummaryPage() {
     [activeMetric, selectedMetricTotals]
   );
 
-  const shopifyCards = useMemo(() => buildPlatformCards(SHOPIFY_PLATFORM_METRICS, dailyPoints, previousDailyPoints), [dailyPoints, previousDailyPoints]);
-  const gaCards = useMemo(() => buildPlatformCards(GA_PLATFORM_METRICS, dailyPoints, previousDailyPoints), [dailyPoints, previousDailyPoints]);
-  const metaCards = useMemo(() => buildPlatformCards(META_PLATFORM_METRICS, dailyPoints, previousDailyPoints), [dailyPoints, previousDailyPoints]);
-  const amazonCards = useMemo(() => buildPlatformCards(AMAZON_PLATFORM_METRICS, dailyPoints, previousDailyPoints), [dailyPoints, previousDailyPoints]);
-
-  const platformSections = useMemo(
-    () => [
-      { id: "shopify", cards: shopifyCards },
-      { id: "ga", cards: gaCards },
-      { id: "meta", cards: metaCards },
-      { id: "amazon", cards: amazonCards },
-    ],
-    [amazonCards, gaCards, metaCards, shopifyCards]
+  const aiSummaryMetrics = useMemo(
+    () => buildAiSummaryMetrics(metricCards),
+    [metricCards]
   );
 
-  const selectedPlatformSection = useMemo(
-    () => platformSections.find((section) => section.id === selectedPlatform) ?? platformSections[0],
-    [platformSections, selectedPlatform]
+  const compareLeftAiSummaryMetrics = useMemo(
+    () => buildAiSummaryMetrics(compareLeftView.metricCards),
+    [compareLeftView.metricCards]
   );
+
+  const compareRightAiSummaryMetrics = useMemo(
+    () => buildAiSummaryMetrics(compareRightView.metricCards),
+    [compareRightView.metricCards]
+  );
+
+  const formatSelectionTimeRange = (selection: SummarySelection) =>
+    selection.timeRange === "custom"
+      ? `${selection.startDate} to ${selection.endDate}`
+      : SUMMARY_TIME_LABELS[selection.timeRange];
+
+  const formatSelectionMarket = (selection: SummarySelection) =>
+    selection.market === "all" ? "All markets" : selection.market;
+
+  const aiSummaryRequest = useMemo(
+    () => ({
+      time_range:
+        summaryTimeRange === "custom"
+          ? `${summaryStartDate} to ${summaryEndDate}`
+          : SUMMARY_TIME_LABELS[summaryTimeRange],
+      market: summaryMarketFilter === "all" ? "All markets" : summaryMarketFilter,
+      category: SUMMARY_CATEGORY_LABELS[summaryCategoryFilter],
+      source: SUMMARY_SOURCE_LABELS[summarySourceFilter],
+      metrics: aiSummaryMetrics,
+    }),
+    [aiSummaryMetrics, summaryCategoryFilter, summaryEndDate, summaryMarketFilter, summarySourceFilter, summaryStartDate, summaryTimeRange]
+  );
+
+  const aiCompareSummaryRequest = useMemo(
+    () => ({
+      left: {
+        label: "View A",
+        time_range: formatSelectionTimeRange(compareLeft),
+        market: formatSelectionMarket(compareLeft),
+        category: SUMMARY_CATEGORY_LABELS[compareLeft.category],
+        source: SUMMARY_SOURCE_LABELS[compareLeft.source],
+        metrics: compareLeftAiSummaryMetrics,
+      },
+      right: {
+        label: "View B",
+        time_range: formatSelectionTimeRange(compareRight),
+        market: formatSelectionMarket(compareRight),
+        category: SUMMARY_CATEGORY_LABELS[compareRight.category],
+        source: SUMMARY_SOURCE_LABELS[compareRight.source],
+        metrics: compareRightAiSummaryMetrics,
+      },
+    }),
+    [compareLeft, compareLeftAiSummaryMetrics, compareRight, compareRightAiSummaryMetrics]
+  );
+
+  const currentAiSummarySignature = useMemo(
+    () => JSON.stringify(isCompareMode ? { mode: "compare", request: aiCompareSummaryRequest } : { mode: "single", request: aiSummaryRequest }),
+    [aiCompareSummaryRequest, aiSummaryRequest, isCompareMode]
+  );
+  const isAiSummaryStale = Boolean(aiSummary && aiSummarySignature && aiSummarySignature !== currentAiSummarySignature);
+
+  const refreshAiSummary = useCallback(async () => {
+    if (isCompareMode) {
+      if (compareLeftAiSummaryMetrics.length === 0 || compareRightAiSummaryMetrics.length === 0) return;
+    } else if (aiSummaryMetrics.length === 0) {
+      return;
+    }
+
+    const requestSignature = currentAiSummarySignature;
+    setIsAiSummaryLoading(true);
+    setAiSummaryError(null);
+
+    const result = isCompareMode
+      ? await generateKpiCompareSummary(aiCompareSummaryRequest)
+      : await generateKpiSummary(aiSummaryRequest);
+
+    if (result.error) {
+      setAiSummaryError(result.error);
+    } else {
+      setAiSummary(result.data ?? null);
+      setAiSummarySignature(requestSignature);
+    }
+    setIsAiSummaryLoading(false);
+  }, [
+    aiCompareSummaryRequest,
+    aiSummaryMetrics.length,
+    aiSummaryRequest,
+    compareLeftAiSummaryMetrics.length,
+    compareRightAiSummaryMetrics.length,
+    currentAiSummarySignature,
+    isCompareMode,
+  ]);
+
+  useEffect(() => {
+    if (!aiSummary && !aiSummaryError && !isAiSummaryLoading) {
+      void refreshAiSummary();
+    }
+  }, [aiSummary, aiSummaryError, isAiSummaryLoading, refreshAiSummary]);
 
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_20%_0%,rgba(14,165,233,0.14),transparent_36%),radial-gradient(circle_at_80%_10%,rgba(16,185,129,0.12),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#ffffff_56%,#eef2ff_100%)] px-6 py-6 lg:px-8">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {metricCards.map(({ definition, currentValue, trend, sparkline }) => {
-            const Icon = definition.icon;
-            return (
-              <button
-                key={definition.key}
-                type="button"
-                onClick={() => {
-                  setActiveMetric(definition.key);
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-700">KPI Summary</p>
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
+              {isCompareMode ? "Compare two KPI views" : "Performance cards"}
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              if (isCompareMode) {
+                setIsCompareMode(false);
+                setActiveCompareSide(null);
+                return;
+              }
+              openCompareMode();
+            }}
+            className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-semibold shadow-sm transition ${
+              isCompareMode
+                ? "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+                : "border border-slate-950 bg-slate-950 text-white hover:bg-slate-800"
+            }`}
+          >
+            <SlidersHorizontal size={16} />
+            {isCompareMode ? "Exit compare mode" : "Compare mode"}
+          </button>
+        </div>
+
+        {isCompareMode ? (
+          <section className="relative overflow-hidden rounded-[32px] border border-cyan-100 bg-white/80 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.10)]">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_8%_0%,rgba(14,165,233,0.13),transparent_28%),radial-gradient(circle_at_92%_0%,rgba(16,185,129,0.13),transparent_28%)]" />
+            <div className="relative mb-5 flex flex-wrap items-end justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">Comparison setup</p>
+                <h3 className="mt-1 text-xl font-semibold text-slate-950">Choose filters by column, then open any side of a card.</h3>
+              </div>
+              <p className="rounded-full border border-slate-200 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-500 shadow-sm">
+                Cards split: View A left / View B right
+              </p>
+            </div>
+            <div className="relative grid gap-4 xl:grid-cols-2">
+              <CompareFilterPanel
+                label="View A Filters"
+                tone="cyan"
+                selection={compareLeft}
+                onChange={(updates) => setCompareLeft((current) => ({ ...current, ...updates }))}
+              />
+              <CompareFilterPanel
+                label="View B Filters"
+                tone="emerald"
+                selection={compareRight}
+                onChange={(updates) => setCompareRight((current) => ({ ...current, ...updates }))}
+              />
+            </div>
+            <div className="relative mt-5">
+              <CompareMetricSplitGrid
+                leftCards={compareLeftView.metricCards}
+                rightCards={compareRightView.metricCards}
+                onMetricClick={(key, side) => {
+                  setActiveMetric(key);
+                  setActiveCompareSide(side);
                   setDetailTab("bars");
                 }}
-                className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-300 hover:shadow-[0_16px_35px_rgba(2,132,199,0.12)]"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="text-sm font-semibold text-slate-600">{definition.label}</p>
-                    <p className="mt-0.5 text-xs text-slate-500">{definition.subtitle}</p>
-                  </div>
-                  <div className="rounded-lg bg-slate-100 p-2 text-slate-700">
-                    <Icon size={16} />
-                  </div>
-                </div>
+              />
+            </div>
+          </section>
+        ) : (
+          <MetricCardGrid
+            cards={metricCards}
+            onMetricClick={(key) => {
+              setActiveMetric(key);
+              setActiveCompareSide(null);
+              setDetailTab("bars");
+            }}
+          />
+        )}
 
-                <div className="mt-4">
-                  <p className="text-3xl font-semibold tracking-tight text-slate-900">{formatMetricValue(definition, currentValue)}</p>
-                  <div className="mt-1 flex items-center gap-1 text-xs font-semibold">
-                    {trend !== null ? (
-                      <>
-                        {trend >= 0 ? <TrendingUp size={14} className="text-emerald-600" /> : <TrendingDown size={14} className="text-red-500" />}
-                        <span className={trend >= 0 ? "text-emerald-600" : "text-red-500"}>{Math.abs(trend).toFixed(1)}%</span>
-                        <span className="text-slate-500">vs previous range</span>
-                      </>
-                    ) : (
-                      <span className="text-slate-500">No previous range available</span>
-                    )}
-                  </div>
-                </div>
-
-                <div className="mt-3 h-16">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={sparkline}>
-                      <Line type="monotone" dataKey="value" stroke={definition.accent} strokeWidth={2.2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-              </button>
-            );
-          })}
-        </section>
-
-        <section className="rounded-2xl border border-white/70 bg-white/90 p-3 shadow-[0_14px_36px_rgba(15,23,42,0.08)]">
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {PLATFORM_OPTIONS.map((platform) => {
-              const active = selectedPlatform === platform.id;
-              const imageClassName =
-                platform.id === "ga"
-                  ? "h-12 w-12 object-contain scale-[1.85]"
-                  : "h-12 w-12 object-contain";
-              return (
+        <section className="relative overflow-hidden rounded-[28px] border border-cyan-100/80 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.10)]">
+          <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(14,165,233,0.16),transparent_30%),radial-gradient(circle_at_88%_12%,rgba(16,185,129,0.16),transparent_28%),linear-gradient(135deg,rgba(248,250,252,0.98),rgba(255,255,255,0.78))]" />
+          <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border border-cyan-200/70 bg-cyan-100/30 blur-sm" />
+          <div className="relative">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">Trinity Insights</p>
+                <h3 className="mt-1 max-w-3xl text-3xl font-semibold tracking-tight text-slate-950">
+                  {isAiSummaryLoading
+                    ? isCompareMode
+                      ? "Comparing the KPI views"
+                      : "Reading the KPI movement"
+                    : isAiSummaryStale
+                      ? isCompareMode
+                        ? "Comparison changed, regenerate insights"
+                        : "Filters changed, regenerate insights"
+                      : aiSummary?.headline ?? (isCompareMode ? "Comparison summary" : "Performance summary")}
+                </h3>
+              </div>
+              <div className="flex flex-wrap items-center justify-end gap-2 text-xs font-semibold">
+                {isCompareMode ? (
+                  <>
+                    <span className="rounded-full border border-cyan-200 bg-white/80 px-3 py-1.5 text-cyan-700 shadow-sm">
+                      View A: {formatSelectionMarket(compareLeft)} / {SUMMARY_SOURCE_LABELS[compareLeft.source]}
+                    </span>
+                    <span className="rounded-full border border-emerald-200 bg-white/80 px-3 py-1.5 text-emerald-700 shadow-sm">
+                      View B: {formatSelectionMarket(compareRight)} / {SUMMARY_SOURCE_LABELS[compareRight.source]}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span className="rounded-full border border-cyan-200 bg-white/80 px-3 py-1.5 text-cyan-700 shadow-sm">
+                      {summaryTimeRange === "custom" ? "Custom range" : SUMMARY_TIME_LABELS[summaryTimeRange]}
+                    </span>
+                    <span className="rounded-full border border-emerald-200 bg-white/80 px-3 py-1.5 text-emerald-700 shadow-sm">
+                      {summaryMarketFilter === "all" ? "All markets" : summaryMarketFilter}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-700 shadow-sm">
+                      {SUMMARY_CATEGORY_LABELS[summaryCategoryFilter]}
+                    </span>
+                    <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1.5 text-slate-700 shadow-sm">
+                      {SUMMARY_SOURCE_LABELS[summarySourceFilter]}
+                    </span>
+                  </>
+                )}
                 <button
-                  key={platform.id}
                   type="button"
-                  onClick={() => setSelectedPlatform(platform.id)}
-                  title={platform.label}
-                  aria-label={platform.label}
-                  className={`group relative flex h-20 items-center justify-center rounded-xl border transition ${
-                    active
-                      ? "border-cyan-400 bg-cyan-50 shadow-[0_10px_24px_rgba(6,182,212,0.2)]"
-                      : "border-slate-200 bg-slate-50 hover:border-slate-300 hover:bg-white"
-                  }`}
+                  onClick={() => void refreshAiSummary()}
+                  disabled={isAiSummaryLoading}
+                  className={`ml-1 inline-flex items-center gap-2 rounded-full px-4 py-2 font-semibold shadow-sm transition ${
+                    isAiSummaryStale
+                      ? "border border-amber-300 bg-amber-300 text-slate-950 hover:bg-amber-200"
+                      : "border border-slate-900 bg-slate-950 text-white hover:bg-slate-800"
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
                 >
-                  <img src={platform.image} alt={platform.label} className={imageClassName} />
-                  <span
-                    className={`absolute bottom-0 left-1/2 h-1.5 w-12 -translate-x-1/2 rounded-full transition ${
-                      active ? "bg-cyan-500" : "bg-transparent group-hover:bg-slate-200"
-                    }`}
-                  />
+                  <RefreshCw size={14} className={isAiSummaryLoading ? "animate-spin" : ""} />
+                  {isAiSummaryStale
+                    ? isCompareMode
+                      ? "Regenerate comparison"
+                      : "Regenerate insights"
+                    : isCompareMode
+                      ? "Refresh comparison"
+                      : "Refresh insights"}
                 </button>
-              );
-            })}
-          </div>
-        </section>
+              </div>
+            </div>
 
-        <section className="rounded-3xl border border-white/70 bg-white/90 px-4 py-4 shadow-[0_16px_40px_rgba(15,23,42,0.08)]">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-            {selectedPlatformSection.cards.map((card) => (
-              <article key={card.id} className="rounded-2xl border border-slate-200 bg-slate-50/55 p-3.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-base font-medium text-slate-700">{card.label}</p>
-                  <div className="flex items-center gap-1 text-xs font-semibold">
-                    {card.trend !== null ? (
-                      <>
-                        {card.trend >= 0 ? <TrendingUp size={13} className="text-emerald-600" /> : <TrendingDown size={13} className="text-red-500" />}
-                        <span className={card.trend >= 0 ? "text-emerald-600" : "text-red-500"}>{Math.abs(card.trend).toFixed(1)}%</span>
-                      </>
-                    ) : (
-                      <span className="text-slate-400">-</span>
-                    )}
+            {isAiSummaryStale ? (
+              <div className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-200 bg-amber-50/90 px-4 py-3 shadow-sm">
+                <div>
+                  <p className="text-sm font-semibold text-amber-900">Filters changed</p>
+                  <p className="mt-0.5 text-sm text-amber-800">
+                    {isCompareMode
+                      ? "Trinity Insights is still showing the previous comparison. Regenerate to compare the current split cards."
+                      : "Trinity Insights is still showing the previous filter view. Regenerate to summarize the current cards."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void refreshAiSummary()}
+                  disabled={isAiSummaryLoading}
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-300 px-4 py-2 text-sm font-semibold text-slate-950 shadow-sm transition hover:bg-amber-200 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <RefreshCw size={15} className={isAiSummaryLoading ? "animate-spin" : ""} />
+                  Regenerate now
+                </button>
+              </div>
+            ) : null}
+
+            {aiSummaryError ? (
+              <div className="mt-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                {aiSummaryError}
+              </div>
+            ) : null}
+
+            {!aiSummaryError && isAiSummaryLoading ? (
+              <div className="mt-6 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+                <div className="rounded-2xl border border-white/80 bg-white/70 p-5 shadow-sm">
+                  <div className="h-4 w-2/3 animate-pulse rounded bg-slate-200" />
+                  <div className="mt-3 h-4 w-full animate-pulse rounded bg-slate-200" />
+                  <div className="mt-3 h-4 w-5/6 animate-pulse rounded bg-slate-200" />
+                </div>
+                <div className="rounded-2xl border border-white/80 bg-white/70 p-5 shadow-sm">
+                  <div className="h-4 w-1/2 animate-pulse rounded bg-slate-200" />
+                  <div className="mt-3 h-4 w-4/5 animate-pulse rounded bg-slate-200" />
+                  <div className="mt-3 h-4 w-3/5 animate-pulse rounded bg-slate-200" />
+                </div>
+              </div>
+            ) : null}
+
+            {!aiSummaryError && !isAiSummaryLoading && aiSummary ? (
+              <div className="mt-6 grid gap-5 lg:grid-cols-[1.18fr_0.82fr]">
+                <div className="rounded-3xl border border-white/80 bg-white/75 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] backdrop-blur">
+                  <p className="text-base leading-7 text-slate-700">{aiSummary.overview}</p>
+                  <div className="mt-5 grid gap-3 md:grid-cols-2">
+                    {aiSummary.insights.map((insight, index) => (
+                      <div
+                        key={insight}
+                        className="group rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-md"
+                      >
+                        <span className="mb-2 flex h-7 w-7 items-center justify-center rounded-full bg-cyan-50 text-xs font-bold text-cyan-700">
+                          {index + 1}
+                        </span>
+                        {insight}
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                <p className="mt-2 text-4xl font-semibold tracking-tight text-slate-900">{formatValueByKind(card.kind, card.value)}</p>
-                <div className="mt-3 h-14">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={card.sparkline}>
-                      <Line type="monotone" dataKey="value" stroke={card.accent} strokeWidth={2.2} dot={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <div className="rounded-3xl border border-slate-200/80 bg-slate-950 p-5 text-white shadow-[0_18px_44px_rgba(15,23,42,0.20)]">
+                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Recommended moves</p>
+                  <div className="mt-4 space-y-3">
+                    {aiSummary.actions.map((action) => (
+                      <div key={action} className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm leading-6 text-slate-100">
+                        {action}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-5 rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3">
+                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">Watchout</p>
+                    <p className="mt-2 text-sm leading-6 text-amber-50">{aiSummary.watchout}</p>
+                  </div>
                 </div>
-              </article>
-            ))}
+              </div>
+            ) : null}
           </div>
         </section>
+
       </div>
 
       {activeMetric && selectedMetricDefinition ? (
@@ -776,7 +1301,9 @@ export function SummaryPage() {
           <div className="flex h-[76vh] w-full max-w-[980px] flex-col overflow-hidden rounded-2xl border border-slate-300 bg-white shadow-[0_24px_72px_rgba(15,23,42,0.28)]">
             <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
               <div>
-                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700">{summaryMarketFilter === "all" ? "All markets" : summaryMarketFilter}</p>
+                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-cyan-700">
+                  {detailSideLabel} / {detailSelection.market === "all" ? "All markets" : detailSelection.market} / {SUMMARY_CATEGORY_LABELS[detailSelection.category]} / {SUMMARY_SOURCE_LABELS[detailSelection.source]}
+                </p>
                 <h2 className="text-[34px] font-semibold leading-none text-slate-900">{selectedMetricDefinition.label}</h2>
               </div>
               <button
@@ -805,11 +1332,11 @@ export function SummaryPage() {
               </div>
               <div className="mt-2 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 px-4 py-2.5">
                 <div>
-                  <p className="text-sm text-slate-500">{selectedDates[selectedDates.length - 1] ? formatDayLabel(selectedDates[selectedDates.length - 1]) : "-"}</p>
+                  <p className="text-sm text-slate-500">{detailSelectedDates[detailSelectedDates.length - 1] ? formatDayLabel(detailSelectedDates[detailSelectedDates.length - 1]) : "-"}</p>
                   <p className="text-3xl font-semibold text-slate-900">{formatMetricValue(selectedMetricDefinition, selectedMetricLatest)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-sm text-slate-500">{selectedDates[selectedDates.length - 2] ? formatDayLabel(selectedDates[selectedDates.length - 2]) : "-"}</p>
+                  <p className="text-sm text-slate-500">{detailSelectedDates[detailSelectedDates.length - 2] ? formatDayLabel(detailSelectedDates[detailSelectedDates.length - 2]) : "-"}</p>
                   <p className="text-3xl font-semibold text-slate-700">{formatMetricValue(selectedMetricDefinition, selectedMetricPrevious)}</p>
                 </div>
               </div>
@@ -819,7 +1346,7 @@ export function SummaryPage() {
               {detailTab === "bars" ? (
                 <div className="h-full rounded-xl border border-slate-200 bg-white p-2.5">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={selectedMetricChartSeries} barCategoryGap={4}>
+                    <LineChart data={selectedMetricChartSeries}>
                       <CartesianGrid stroke="#e2e8f0" vertical={false} />
                       <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} tickMargin={8} minTickGap={18} />
                       <YAxis tick={{ fill: "#64748b", fontSize: 12 }} width={70} />
@@ -828,8 +1355,15 @@ export function SummaryPage() {
                         labelStyle={{ fontWeight: 600, color: "#0f172a" }}
                         contentStyle={{ borderRadius: 10, borderColor: "#cbd5e1", boxShadow: "0 8px 24px rgba(15,23,42,0.12)" }}
                       />
-                      <Bar dataKey="value" fill={selectedMetricDefinition.accent} radius={[4, 4, 0, 0]} maxBarSize={22} />
-                    </BarChart>
+                      <Line
+                        type="monotone"
+                        dataKey="value"
+                        name={selectedMetricDefinition.label}
+                        stroke={selectedMetricDefinition.accent}
+                        strokeWidth={2.8}
+                        dot={false}
+                      />
+                    </LineChart>
                   </ResponsiveContainer>
                 </div>
               ) : null}
