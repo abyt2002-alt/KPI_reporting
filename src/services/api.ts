@@ -477,6 +477,14 @@ export interface AIInsightsResponse {
   bullets: string[];
   green_flag: string;
   red_flag: string;
+  variants?: Array<{
+    headline: string;
+    bullets: string[];
+    green_flag: string;
+    red_flag: string;
+  }>;
+  retrieval_examples?: string[];
+  rag_scope?: string;
 }
 
 /**

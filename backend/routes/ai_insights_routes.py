@@ -34,6 +34,9 @@ class InsightsResponse(BaseModel):
     bullets: list[str]
     green_flag: str
     red_flag: str
+    variants: Optional[list[Dict[str, Any]]] = None
+    retrieval_examples: Optional[list[str]] = None
+    rag_scope: Optional[str] = None
 
 
 @router.post("/generate-insights", response_model=InsightsResponse)
