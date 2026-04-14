@@ -22,10 +22,18 @@ function App() {
       <div className="flex-1 flex flex-col overflow-hidden">
         <Header />
         <main className="flex-1 overflow-auto">
-          {activeTab === "summary" ? <SummaryPage /> : null}
-          {activeTab === "campaign_assessment" ? <CampaignAssessmentPage /> : null}
-          {activeTab === "roas_playground" ? <RoasPlaygroundPage /> : null}
-          {activeTab === "upload" ? <UploadPage /> : null}
+          <div style={{ display: activeTab === "summary" ? "block" : "none" }}>
+            <SummaryPage />
+          </div>
+          <div style={{ display: activeTab === "campaign_assessment" ? "block" : "none" }}>
+            <CampaignAssessmentPage />
+          </div>
+          <div style={{ display: activeTab === "roas_playground" ? "block" : "none" }}>
+            <RoasPlaygroundPage />
+          </div>
+          <div style={{ display: activeTab === "upload" ? "block" : "none" }}>
+            <UploadPage />
+          </div>
         </main>
       </div>
     </div>
