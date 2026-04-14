@@ -863,12 +863,14 @@ export function SummaryPage() {
   const summarySourceFilter = useStore((state) => state.summarySourceFilter);
   const summaryStartDate = useStore((state) => state.summaryStartDate);
   const summaryEndDate = useStore((state) => state.summaryEndDate);
+  
   const [activeMetric, setActiveMetric] = useState<MetricKey | null>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("bars");
   const [aiSummary, setAiSummary] = useState<KpiSummaryResponse | null>(null);
   const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
   const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false);
   const [aiSummarySignature, setAiSummarySignature] = useState<string | null>(null);
+  const [marketingChannel, setMarketingChannel] = useState<'blended' | 'meta' | 'google'>('blended');
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [activeCompareSide, setActiveCompareSide] = useState<CompareSide | null>(null);
   const [compareLeft, setCompareLeft] = useState<SummarySelection>({
@@ -1291,6 +1293,504 @@ export function SummaryPage() {
                 </div>
               </div>
             ) : null}
+          </div>
+        </section>
+
+        {/* Sales Deep Dive Section */}
+        <section className="mt-8">
+          <div className="rounded-3xl border border-white/80 bg-white/90 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+            <div className="mb-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Sales deep dive</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Weekly sales — last {selectedDates.length} {selectedDates.length === 1 ? 'day' : 'days'}
+              </p>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-2">
+              {/* Revenue over time */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Revenue over time</p>
+                <div className="mt-4 h-[220px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sampleObjects(dailyPoints, 30)}>
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => formatCurrencyCompact(v)} />
+                      <Tooltip formatter={(v) => formatCurrencyCompact(Number(v))} />
+                      <Line type="monotone" dataKey="revenue" name="Shopify" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="media_spend" name="Amazon" stroke="#06b6d4" strokeWidth={2.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-3 flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+                    <span className="text-slate-600">Shopify</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-cyan-500" />
+                    <span className="text-slate-600">Amazon</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Orders & AOV over time */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Orders & AOV over time</p>
+                <div className="mt-4 h-[220px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sampleObjects(dailyPoints, 30)}>
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis yAxisId="left" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis yAxisId="right" orientation="right" tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
+                      <Tooltip />
+                      <Line yAxisId="left" type="monotone" dataKey="orders" name="Orders" stroke="#f59e0b" strokeWidth={2.5} dot={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="aov" name="AOV" stroke="#8b5cf6" strokeWidth={2.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-3 flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-amber-500" />
+                    <span className="text-slate-600">Orders</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-purple-500" />
+                    <span className="text-slate-600">AOV</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* New vs Returning customers */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">New vs returning customers</p>
+                <div className="mt-4 h-[220px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sampleObjects(dailyPoints.map(p => ({ 
+                      ...p, 
+                      new_pct: p.new_customers_pct,
+                      returning_pct: 100 - p.new_customers_pct 
+                    })), 30)}>
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
+                      <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
+                      <Line type="monotone" dataKey="new_pct" name="New" stroke="#10b981" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="returning_pct" name="Returning" stroke="#6366f1" strokeWidth={2.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-3 flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
+                    <span className="text-slate-600">New</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-indigo-500" />
+                    <span className="text-slate-600">Returning</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Repeat purchase rate */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Repeat purchase rate</p>
+                <div className="mt-4 h-[220px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sampleObjects(dailyPoints.map((p, i) => ({ 
+                      ...p, 
+                      repeat_rate: 68 + Math.sin(i / 3) * 8 
+                    })), 30)}>
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 11 }} domain={[60, 80]} tickFormatter={(v) => `${v}%`} />
+                      <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
+                      <Line type="monotone" dataKey="repeat_rate" name="Repeat rate" stroke="#059669" strokeWidth={2.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-3 flex items-center gap-4 text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <div className="h-2.5 w-2.5 rounded-full bg-emerald-600" />
+                    <span className="text-slate-600">Repeat rate</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Top 5 products by revenue */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Top 5 products by revenue contribution</p>
+                <div className="mt-4 space-y-3">
+                  {(() => {
+                    const allProducts = [
+                      { name: 'Ring', shopify: '28.4%', amazon: '31.2%' },
+                      { name: 'Necklace', shopify: '24.1%', amazon: '22.8%' },
+                      { name: 'Bracelet', shopify: '19.7%', amazon: '18.5%' },
+                      { name: 'Earring', shopify: '16.3%', amazon: '17.9%' },
+                      { name: 'Pendant', shopify: '11.5%', amazon: '9.6%' },
+                    ];
+                    
+                    if (summaryCategoryFilter !== 'all') {
+                      const selectedCategory = SUMMARY_CATEGORY_LABELS[summaryCategoryFilter];
+                      return allProducts.filter(p => p.name === selectedCategory).concat(
+                        allProducts.filter(p => p.name !== selectedCategory).slice(0, 4)
+                      );
+                    }
+                    
+                    return allProducts;
+                  })().map((product) => (
+                    <div key={product.name} className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700">{product.name}</span>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="text-slate-600">
+                          <span className="font-semibold text-blue-600">{product.shopify}</span> Shopify
+                        </span>
+                        <span className="text-slate-600">
+                          <span className="font-semibold text-cyan-600">{product.amazon}</span> Amazon
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Top 5 regions by revenue */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Top 5 regions by revenue contribution</p>
+                <div className="mt-4 space-y-3">
+                  {(() => {
+                    const usDmas = [
+                      { name: 'New York', shopify: '24.7%', amazon: '21.9%' },
+                      { name: 'Los Angeles', shopify: '19.8%', amazon: '20.3%' },
+                      { name: 'Chicago', shopify: '14.3%', amazon: '13.8%' },
+                      { name: 'Dallas', shopify: '11.6%', amazon: '12.4%' },
+                      { name: 'Houston', shopify: '8.2%', amazon: '7.9%' },
+                    ];
+                    
+                    const ukDmas = [
+                      { name: 'London', shopify: '42.3%', amazon: '38.7%' },
+                      { name: 'Manchester', shopify: '18.4%', amazon: '19.2%' },
+                      { name: 'Birmingham', shopify: '14.7%', amazon: '15.3%' },
+                      { name: 'Leeds', shopify: '12.1%', amazon: '13.6%' },
+                      { name: 'Glasgow', shopify: '8.5%', amazon: '9.2%' },
+                    ];
+                    
+                    const uaeDmas = [
+                      { name: 'Dubai', shopify: '58.3%', amazon: '54.2%' },
+                      { name: 'Abu Dhabi', shopify: '24.7%', amazon: '26.8%' },
+                      { name: 'Sharjah', shopify: '9.4%', amazon: '10.3%' },
+                      { name: 'Ajman', shopify: '4.8%', amazon: '5.1%' },
+                      { name: 'Ras Al Khaimah', shopify: '2.8%', amazon: '3.6%' },
+                    ];
+                    
+                    if (summaryMarketFilter === 'US') return usDmas;
+                    if (summaryMarketFilter === 'UK') return ukDmas;
+                    if (summaryMarketFilter === 'UAE') return uaeDmas;
+                    
+                    // All markets - show top from each
+                    return [
+                      { name: 'New York (US)', shopify: '18.2%', amazon: '16.4%' },
+                      { name: 'London (UK)', shopify: '15.7%', amazon: '14.9%' },
+                      { name: 'Dubai (UAE)', shopify: '12.3%', amazon: '11.8%' },
+                      { name: 'Los Angeles (US)', shopify: '10.8%', amazon: '11.2%' },
+                      { name: 'Manchester (UK)', shopify: '8.4%', amazon: '9.1%' },
+                    ];
+                  })().map((region) => (
+                    <div key={region.name} className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700">{region.name}</span>
+                      <div className="flex items-center gap-4 text-xs">
+                        <span className="text-slate-600">
+                          <span className="font-semibold text-blue-600">{region.shopify}</span> Shopify
+                        </span>
+                        <span className="text-slate-600">
+                          <span className="font-semibold text-cyan-600">{region.amazon}</span> Amazon
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Marketing Deep Dive Section */}
+        <section className="mt-8">
+          <div className="rounded-3xl border border-white/80 bg-white/90 p-6 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+            <div className="mb-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Marketing deep dive</p>
+              <p className="mt-1 text-sm text-slate-600">
+                Weekly view — last {selectedDates.length} {selectedDates.length === 1 ? 'day' : 'days'}
+              </p>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-[1.2fr_0.8fr]">
+              {/* Ad spend over time */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-900">Ad spend over time</p>
+                  <select 
+                    value={marketingChannel}
+                    onChange={(e) => setMarketingChannel(e.target.value as 'blended' | 'meta' | 'google')}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+                  >
+                    <option value="blended">Blended</option>
+                    <option value="meta">Meta</option>
+                    <option value="google">Google</option>
+                  </select>
+                </div>
+                <div className="mt-4 h-[240px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sampleObjects(dailyPoints, 30)}>
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v) => formatCurrencyCompact(Number(v))} />
+                      {marketingChannel === 'blended' && (
+                        <>
+                          <Line type="monotone" dataKey="media_spend" name="Total ad spend" stroke="#0f172a" strokeWidth={2.5} dot={false} />
+                          <Line type="monotone" dataKey="google_spend" name="Google CPC" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                        </>
+                      )}
+                      {marketingChannel === 'meta' && (
+                        <Line type="monotone" dataKey="media_spend" name="Meta Ads" stroke="#ef4444" strokeWidth={2.5} dot={false} />
+                      )}
+                      {marketingChannel === 'google' && (
+                        <Line type="monotone" dataKey="google_spend" name="Google CPC" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+                      )}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-3 flex items-center gap-4 text-xs">
+                  {marketingChannel === 'blended' && (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-2.5 w-2.5 rounded-full bg-slate-900" />
+                        <span className="text-slate-600">Total ad spend</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <div className="h-2.5 w-2.5 rounded-full bg-slate-400" />
+                        <span className="text-slate-600">Google CPC</span>
+                      </div>
+                    </>
+                  )}
+                  {marketingChannel === 'meta' && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-2.5 w-2.5 rounded-full bg-red-500" />
+                      <span className="text-slate-600">Meta Ads</span>
+                    </div>
+                  )}
+                  {marketingChannel === 'google' && (
+                    <div className="flex items-center gap-1.5">
+                      <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
+                      <span className="text-slate-600">Google CPC</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Spend split + Key metrics */}
+              <div className="space-y-5">
+                {/* Spend split donut */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <p className="text-sm font-semibold text-slate-900">Spend split</p>
+                  <div className="mt-4 flex items-center justify-center">
+                    <div className="relative h-[140px] w-[140px]">
+                      <svg viewBox="0 0 100 100" className="transform -rotate-90">
+                        <circle cx="50" cy="50" r="40" fill="none" stroke="#3b82f6" strokeWidth="20" strokeDasharray="188.5 251.3" />
+                        <circle cx="50" cy="50" r="40" fill="none" stroke="#ef4444" strokeWidth="20" strokeDasharray="62.8 251.3" strokeDashoffset="-188.5" />
+                      </svg>
+                      <div className="absolute inset-0 flex items-center justify-center">
+                        <div className="text-center">
+                          <p className="text-xs text-slate-500">Total</p>
+                          <p className="text-lg font-bold text-slate-900">100%</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="h-3 w-3 rounded-full bg-blue-500" />
+                        <span className="text-slate-600">Google CPC</span>
+                      </div>
+                      <span className="font-semibold text-slate-900">75%</span>
+                    </div>
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2">
+                        <div className="h-3 w-3 rounded-full bg-red-500" />
+                        <span className="text-slate-600">Meta Ads</span>
+                      </div>
+                      <span className="font-semibold text-slate-900">25%</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Key metrics */}
+                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                  <div className="mb-3 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-slate-900">Key metrics</p>
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => setMarketingChannel('blended')}
+                        className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'blended' ? 'bg-slate-100 text-slate-700' : 'text-slate-500'}`}
+                      >
+                        Blended
+                      </button>
+                      <button 
+                        onClick={() => setMarketingChannel('meta')}
+                        className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'meta' ? 'bg-rose-100 text-rose-700' : 'text-slate-500'}`}
+                      >
+                        Meta
+                      </button>
+                      <button 
+                        onClick={() => setMarketingChannel('google')}
+                        className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'google' ? 'bg-blue-100 text-blue-700' : 'text-slate-500'}`}
+                      >
+                        Google
+                      </button>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">ROAS</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">
+                        {marketingChannel === 'meta' ? '2.42x' : marketingChannel === 'google' ? '3.18x' : '2.80x'}
+                      </p>
+                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPA</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">
+                        {marketingChannel === 'meta' ? '$16.80' : marketingChannel === 'google' ? '$12.40' : '$14.60'}
+                      </p>
+                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CTR</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">
+                        {marketingChannel === 'meta' ? '3.18%' : marketingChannel === 'google' ? '1.94%' : '2.56%'}
+                      </p>
+                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPC</p>
+                      <p className="mt-1 text-2xl font-bold text-slate-900">
+                        {marketingChannel === 'meta' ? '$0.94' : marketingChannel === 'google' ? '$1.32' : '$1.13'}
+                      </p>
+                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Marketing funnel + Top campaigns */}
+            <div className="mt-5 grid gap-5 lg:grid-cols-2">
+              {/* Marketing funnel */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div className="mb-4 flex items-center justify-between">
+                  <p className="text-sm font-semibold text-slate-900">Marketing — sales funnel</p>
+                  <div className="flex gap-1 text-[10px] font-semibold">
+                    <button 
+                      onClick={() => setMarketingChannel('blended')}
+                      className={`rounded-md px-2 py-1 ${marketingChannel === 'blended' ? 'bg-rose-50 text-rose-700' : 'text-slate-500'}`}
+                    >
+                      Blended
+                    </button>
+                    <button 
+                      onClick={() => setMarketingChannel('meta')}
+                      className={`rounded-md px-2 py-1 ${marketingChannel === 'meta' ? 'bg-rose-50 text-rose-700' : 'text-slate-500'}`}
+                    >
+                      Meta
+                    </button>
+                    <button 
+                      onClick={() => setMarketingChannel('google')}
+                      className={`rounded-md px-2 py-1 ${marketingChannel === 'google' ? 'bg-rose-50 text-rose-700' : 'text-slate-500'}`}
+                    >
+                      Google
+                    </button>
+                  </div>
+                </div>
+                <div className="space-y-3">
+                  {(() => {
+                    const metaData = [
+                      { stage: 'Impressions', value: '1.8M', pct: 100 },
+                      { stage: 'Clicks', value: '48.2k', pct: 82 },
+                      { stage: 'Site sessions', value: '38.7k', pct: 67 },
+                      { stage: 'Add to cart', value: '9.8k', pct: 41 },
+                      { stage: 'Checkout initiated', value: '6.7k', pct: 28 },
+                      { stage: 'Orders', value: '3.4k', pct: 18 },
+                    ];
+                    
+                    const googleData = [
+                      { stage: 'Impressions', value: '1.2M', pct: 100 },
+                      { stage: 'Clicks', value: '38.4k', pct: 82 },
+                      { stage: 'Site sessions', value: '29.2k', pct: 67 },
+                      { stage: 'Add to cart', value: '7.2k', pct: 41 },
+                      { stage: 'Checkout initiated', value: '5.1k', pct: 28 },
+                      { stage: 'Orders', value: '2.8k', pct: 18 },
+                    ];
+                    
+                    // Blended = sum of Meta + Google
+                    const blendedData = [
+                      { stage: 'Impressions', value: '3.0M', pct: 100 },
+                      { stage: 'Clicks', value: '86.6k', pct: 82 },
+                      { stage: 'Site sessions', value: '67.9k', pct: 67 },
+                      { stage: 'Add to cart', value: '17.0k', pct: 41 },
+                      { stage: 'Checkout initiated', value: '11.8k', pct: 28 },
+                      { stage: 'Orders', value: '6.2k', pct: 18 },
+                    ];
+                    
+                    const data = marketingChannel === 'meta' ? metaData : marketingChannel === 'google' ? googleData : blendedData;
+                    
+                    return data.map((item) => (
+                      <div key={item.stage}>
+                        <div className="mb-1.5 flex items-center justify-between text-xs">
+                          <span className="font-medium text-slate-700">{item.stage}</span>
+                          <div className="flex items-center gap-2">
+                            <span className="font-semibold text-slate-900">{item.value}</span>
+                            <span className="text-slate-500">{item.pct}%</span>
+                          </div>
+                        </div>
+                        <div className="h-2 rounded-full bg-slate-100">
+                          <div className={`h-2 rounded-full bg-rose-${600 - item.pct}`} style={{ width: `${item.pct}%` }} />
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+
+              {/* Top campaigns */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Top 5 campaigns by share of spend</p>
+                <div className="mt-4 space-y-3">
+                  {[
+                    { name: 'Summer sale — LA', meta: '24.7%', google: '28.4%' },
+                    { name: 'Retargeting — ATC', meta: '18.8%', google: '22.7%' },
+                    { name: 'Broad — interest stack', meta: '16.3%', google: '18.6%' },
+                    { name: 'DPA — catalog', meta: '14.1%', google: '15.3%' },
+                    { name: 'UGC — new creative', meta: '9.7%', google: '8.9%' },
+                  ].map((campaign) => (
+                    <div key={campaign.name}>
+                      <div className="mb-1.5 flex items-center justify-between text-xs">
+                        <span className="font-medium text-slate-700">{campaign.name}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-slate-600">
+                            <span className="font-semibold text-blue-600">{campaign.google}</span> Google
+                          </span>
+                          <span className="text-slate-600">
+                            <span className="font-semibold text-rose-600">{campaign.meta}</span> Meta
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { IngestionSource } from '../services/api';
+import type { IngestionSource, KpiSummaryResponse } from '../services/api';
 import { FY25_DEFAULT_CUSTOM_END, FY25_DEFAULT_CUSTOM_START } from '../modules/summaryConfig';
 
 export interface ColumnMeta {
@@ -205,6 +205,13 @@ export type SummaryMarketFilter = 'all' | 'US' | 'UK' | 'UAE';
 export type SummaryCategoryFilter = 'all' | 'ring' | 'necklace' | 'bracelet' | 'earring';
 export type SummarySourceFilter = 'all' | 'shopify' | 'amazon';
 
+export interface CachedAiSummary {
+  data: KpiSummaryResponse | null;
+  signature: string | null;
+  error: string | null;
+  isLoading: boolean;
+}
+
 interface AppState {
   // Auth state
   user: User | null;
@@ -229,6 +236,8 @@ interface AppState {
   summaryEndDate: string;
   ingestionModalSource: IngestionSource | null;
   isIngestionModalOpen: boolean;
+  // AI Summary cache
+  aiSummaryCache: CachedAiSummary;
   // Chart creation form state (persisted)
   chartForm: ChartFormState;
   // Clustering state
@@ -261,6 +270,9 @@ interface AppState {
   setSummaryCategoryFilter: (category: SummaryCategoryFilter) => void;
   setSummarySourceFilter: (source: SummarySourceFilter) => void;
   setSummaryDateRange: (startDate: string, endDate: string) => void;
+  // AI Summary cache actions
+  setAiSummaryCache: (cache: Partial<CachedAiSummary>) => void;
+  clearAiSummaryCache: () => void;
   // Report item actions
   updateReportItemComment: (itemId: string, comment: string) => void;
   updateSavedReportItemComment: (reportId: string, itemId: string, comment: string) => void;
@@ -396,6 +408,13 @@ export const useStore = create<AppState>()(
       summaryEndDate: FY25_DEFAULT_CUSTOM_END,
       ingestionModalSource: null,
       isIngestionModalOpen: false,
+      // AI Summary cache
+      aiSummaryCache: {
+        data: null,
+        signature: null,
+        error: null,
+        isLoading: false,
+      },
       // Chart form state
       chartForm: { ...defaultChartForm },
       // Clustering state
@@ -430,6 +449,9 @@ export const useStore = create<AppState>()(
       setSummaryCategoryFilter: (summaryCategoryFilter) => set({ summaryCategoryFilter }),
       setSummarySourceFilter: (summarySourceFilter) => set({ summarySourceFilter }),
       setSummaryDateRange: (summaryStartDate, summaryEndDate) => set({ summaryStartDate, summaryEndDate }),
+      // AI Summary cache actions
+      setAiSummaryCache: (cache) => set((s) => ({ aiSummaryCache: { ...s.aiSummaryCache, ...cache } })),
+      clearAiSummaryCache: () => set({ aiSummaryCache: { data: null, signature: null, error: null, isLoading: false } }),
       updateChartForm: (updates) => set((s) => ({ chartForm: { ...s.chartForm, ...updates } })),
       resetChartFormTitle: () => set((s) => ({ chartForm: { ...s.chartForm, title: '' } })),
       updateClusteringState: (updates) => set((s) => ({ clusteringState: { ...s.clusteringState, ...updates } })),
@@ -536,6 +558,8 @@ export const useStore = create<AppState>()(
         summarySourceFilter: state.summarySourceFilter,
         summaryStartDate: state.summaryStartDate,
         summaryEndDate: state.summaryEndDate,
+        // Persist AI summary cache
+        aiSummaryCache: state.aiSummaryCache,
         chartForm: state.chartForm,
         clusteringState: state.clusteringState,
         timeSeriesState: state.timeSeriesState,
