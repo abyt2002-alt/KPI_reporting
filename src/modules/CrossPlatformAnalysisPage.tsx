@@ -89,7 +89,7 @@ function calculateOLS(x: number[], y: number[]): {
   const pValue = calculatePValue(Math.abs(tStat), df);
   
   // In log-log model, beta IS the elasticity
-  // β = d(log Y) / d(log X) = (dY/Y) / (dX/X) = elasticity
+  // beta = d(log Y) / d(log X) = (dY/Y) / (dX/X) = elasticity
   const elasticity = beta;
   
   return { beta, intercept, rSquared, standardError, tStat, pValue, elasticity };
@@ -159,7 +159,9 @@ function MultiTargetTable({
   onRowClick,
   mode,
   rollingWindow,
-  selectedPlatform,
+  lagMin,
+  lagMax,
+  labelByColumn,
 }: {
   target: string;
   data: { col: string; r0: number; rBest: number; bestLag: number }[];
@@ -168,17 +170,12 @@ function MultiTargetTable({
   onRowClick: (item: { col: string; r0: number; rBest: number; bestLag: number }) => void;
   mode: "lag" | "rolling";
   rollingWindow?: number;
-  selectedPlatform?: string;
+  lagMin: number;
+  lagMax: number;
+  labelByColumn?: Map<string, string>;
 }) {
   const tableRef = useRef<HTMLDivElement>(null);
-  
-  // Filter data by selected platform if provided
-  const filteredData = useMemo(() => {
-    if (!selectedPlatform || selectedPlatform === "All") return data;
-    return data.filter(item => {
-      return item.col.startsWith(`${selectedPlatform}_`);
-    });
-  }, [data, selectedPlatform]);
+  const lagRange = Math.max(1, lagMax - lagMin);
   
   return (
     <div ref={tableRef} className="border border-[#E5E5E5] rounded-xl overflow-hidden shadow-sm">
@@ -188,28 +185,22 @@ function MultiTargetTable({
           {mode === "rolling" && (
             <p className="text-[11px] text-[#333333]/70">Rolling sum of {rollingWindow} periods</p>
           )}
-          {selectedPlatform && selectedPlatform !== "All" && (
-            <p className="text-[11px] text-[#333333]/70">Filtered by: {selectedPlatform}</p>
-          )}
         </div>
-        <button onClick={onRemove} className="text-[#333333]/60 hover:text-[#333333] text-[20px] leading-none">×</button>
+        <button onClick={onRemove} className="text-[#333333]/60 hover:text-[#333333] text-[20px] leading-none">x</button>
       </div>
-      <div className="max-h-[400px] overflow-auto">
-        <table className="w-full text-[13px]">
-          <thead className="bg-[#F5F5F5] sticky top-0">
+      <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
+        <table className="w-full table-fixed text-[12px]">
+          <thead className="bg-[#F5F5F5] sticky top-0 z-10">
             <tr>
-              <th className="text-left px-4 py-3 text-[#555555] font-semibold">Column</th>
-              <th className="text-right px-3 py-3 text-[#555555] font-semibold">r(0)</th>
-              <th className="text-right px-3 py-3 text-[#555555] font-semibold">
-                {mode === "rolling" ? `r(Σ${rollingWindow})` : "Best r"}
-              </th>
-              <th className="text-right px-4 py-3 text-[#555555] font-semibold">
-                {mode === "rolling" ? "Window" : "Lag"}
+              <th className="w-[40%] text-left px-3 py-3 text-[#475569] font-semibold">Column</th>
+              <th className="w-[28%] text-left px-3 py-3 text-[#475569] font-semibold">Best r</th>
+              <th className="w-[32%] text-left px-3 py-3 text-[#475569] font-semibold">
+                {mode === "rolling" ? `Window (${rollingWindow})` : `Lag (${lagMin} - ${lagMax} days)`}
               </th>
             </tr>
           </thead>
           <tbody>
-            {filteredData
+            {data
               ?.filter(item => !showOnlyPositive || item.rBest > 0)
               .filter(item => item.col.toLowerCase() !== 'week')
               .sort((a, b) => {
@@ -225,28 +216,39 @@ function MultiTargetTable({
               <tr 
                 key={item.col}
                 onClick={() => onRowClick(item)}
-                className={`cursor-pointer hover:bg-[#FFF8ED] transition border-b border-[#F0F0F0] ${idx === 0 ? "bg-[#FFF2DF]" : ""}`}
+                className={`cursor-pointer hover:bg-[#F8FAFC] transition border-b border-[#F0F0F0] ${idx === 0 ? "bg-[#F8FAFC]" : ""}`}
               >
-                <td className="px-4 py-2.5 text-[#333333]" title={item.col}>
-                  {idx === 0 && <span className="text-[#FFBD59] mr-1.5">★</span>}
-                  <span className="truncate inline-block max-w-[150px] align-middle">{formatColumnName(item.col)}</span>
+                <td className="px-3 py-2.5 text-[#1E293B] align-top" title={item.col}>
+                  {idx === 0 && <span className="text-[#0F766E] mr-1.5">*</span>}
+                  <span className="inline-block align-middle break-words leading-4">{labelByColumn?.get(item.col) ?? formatColumnName(item.col)}</span>
                 </td>
-                <td className={`px-3 py-2.5 text-right font-mono text-[14px] ${
-                  Math.abs(item.r0) > 0.7 
-                    ? item.r0 > 0 ? "text-[#2D8A4E]" : "text-[#DC2626]"
-                    : Math.abs(item.r0) > 0.4 ? "text-[#B8860B]" : "text-[#999999]"
-                }`}>
-                  {item.r0.toFixed(2)}
+                <td className="px-3 py-2.5 align-top">
+                  <div className={`font-mono text-[16px] font-bold ${
+                    Math.abs(item.rBest) > 0.7
+                      ? item.rBest > 0 ? "text-[#047857]" : "text-[#B91C1C]"
+                      : Math.abs(item.rBest) > 0.4 ? "text-[#A16207]" : "text-[#64748B]"
+                  }`}>
+                    {item.rBest.toFixed(2)}
+                  </div>
+                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-[#E2E8F0] overflow-hidden">
+                    <div
+                      className={`h-full rounded-full ${item.rBest >= 0 ? "bg-[#059669]" : "bg-[#E11D48]"}`}
+                      style={{ width: `${Math.max(0, Math.min(100, Math.abs(item.rBest) * 100))}%` }}
+                    />
+                  </div>
                 </td>
-                <td className={`px-3 py-2.5 text-right font-mono text-[14px] font-bold ${
-                  Math.abs(item.rBest) > 0.7 
-                    ? item.rBest > 0 ? "text-[#2D8A4E]" : "text-[#DC2626]"
-                    : Math.abs(item.rBest) > 0.4 ? "text-[#B8860B]" : "text-[#999999]"
-                }`}>
-                  {item.rBest.toFixed(2)}
-                </td>
-                <td className="px-4 py-2.5 text-right text-[#458EE2] font-medium text-[14px]">
-                  {mode === "rolling" ? `Σ${item.bestLag}` : (item.bestLag !== 0 ? (item.bestLag > 0 ? `+${item.bestLag}` : item.bestLag) : "0")}
+                <td className="px-3 py-2.5 align-top">
+                  <div className="mt-2 h-1.5 w-full rounded-full bg-[#DBEAFE] relative">
+                    <span
+                      className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2563EB] shadow-sm"
+                      style={{
+                        left: `${Math.max(2, Math.min(98, ((item.bestLag - lagMin) / lagRange) * 100))}%`,
+                      }}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-[#475569] leading-4">
+                    {mode === "rolling" ? `window ${item.bestLag}` : `peaks at day ${item.bestLag}`}
+                  </p>
                 </td>
               </tr>
             ))}
@@ -277,13 +279,13 @@ export function CrossPlatformAnalysisPage() {
   // State
   const [targetVariables, setTargetVariables] = useState<string[]>([]);
   const [metricsExpanded, setMetricsExpanded] = useState(false);
-  const [showOnlyPositive, setShowOnlyPositive] = useState(false);
+  const [showOnlyPositive, setShowOnlyPositive] = useState(true);
   const [lagMin, setLagMin] = useState(0);
   const [lagMax, setLagMax] = useState(15);
   const [correlationMode, setCorrelationMode] = useState<"lag" | "rolling">("lag");
   const [rollingWindow, setRollingWindow] = useState(4);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
-  const [selectedPlatform, setSelectedPlatform] = useState<string>("All");
+  const [activeOutcomeFilter, setActiveOutcomeFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState("2025-01-01");
   const [endDate, setEndDate] = useState("2025-11-15");
   
@@ -330,104 +332,139 @@ export function CrossPlatformAnalysisPage() {
     const startWeek = dateToWeek(startDate);
     const endWeek = dateToWeek(endDate);
     
-    const filteredRows = dataset.rows.filter(row => {
+    const baseRows = dataset.rows.filter(row => {
       const weekNum = Number(row.Week);
       return weekNum >= startWeek && weekNum <= endWeek;
     });
-    
+
+    const toNumber = (value: unknown) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? num : 0;
+    };
+
+    const filteredRows: Record<string, unknown>[] = baseRows.map((sourceRow) => {
+      const row = sourceRow as Record<string, unknown>;
+      const googleAllImpressions =
+        toNumber(row["Google_Organic_Impressions"]) +
+        toNumber(row["Google_PMax_Impressions"]) +
+        toNumber(row["Google_Ads_Impressions"]) +
+        toNumber(row["Google_YouTube_Impressions"]);
+
+      const metaClicks = Math.max(0, Math.round(toNumber(row["Meta_Total_ThruPlays"]) * 0.22));
+      const youtubeReelsImpressions = Math.max(0, Math.round(toNumber(row["Google_YouTube_Impressions"]) * 0.38));
+      const meta21To35Impressions = Math.max(
+        0,
+        Math.round(toNumber(row["Meta_18-24_Impressions"]) * 0.25 + toNumber(row["Meta_25-34_Impressions"]) * 0.75)
+      );
+      const meta55PlusImpressions = toNumber(row["Meta_55-64_Impressions"]) + toNumber(row["Meta_65+_Impressions"]);
+      const amazonSearchClicks = Math.max(0, Math.round(toNumber(row["Amazon Search Query Volume"]) * 0.07));
+
+      const enrichedRow: Record<string, unknown> = {
+        ...row,
+        Marketing_Google_All_Impressions: googleAllImpressions,
+        Marketing_Meta_Clicks: metaClicks,
+        Marketing_YouTube_Reels_Impressions: youtubeReelsImpressions,
+        Marketing_Meta_21_35_Impressions: meta21To35Impressions,
+        Marketing_Meta_55Plus_Impressions: meta55PlusImpressions,
+        Marketing_Amazon_Search_Clicks: amazonSearchClicks,
+      };
+      return enrichedRow;
+    });
+
+    const derivedColumns = [
+      { name: "Marketing_Google_All_Impressions", type: "numeric" as const },
+      { name: "Marketing_Meta_Clicks", type: "numeric" as const },
+      { name: "Marketing_YouTube_Reels_Impressions", type: "numeric" as const },
+      { name: "Marketing_Meta_21_35_Impressions", type: "numeric" as const },
+      { name: "Marketing_Meta_55Plus_Impressions", type: "numeric" as const },
+      { name: "Marketing_Amazon_Search_Clicks", type: "numeric" as const },
+    ];
+
+    const existing = new Set(dataset.columns.map((c) => c.name));
+    const columns = [
+      ...dataset.columns,
+      ...derivedColumns.filter((c) => !existing.has(c.name)),
+    ];
+
     return {
       rows: filteredRows,
-      columns: dataset.columns,
+      columns,
       rowCount: filteredRows.length
     };
   }, [dataset, startDate, endDate]);
   
   const numericCols = filteredDataset?.columns.filter((c) => c.type === "numeric") || [];
-  
-  // Group metrics by platform and category
-  const metricsByPlatform = useMemo(() => {
-    const grouped: Record<string, Record<string, typeof numericCols>> = {
-      Amazon: { "Sales & Performance": [] },
-      Shopify: { "Sales & Performance": [] },
-      Meta: { 
-        "Total": [],
-        "Gender": [],
-        "Age × Gender": [],
-        "Objective": [],
-        "Media Type": [],
-        "Audience": []
-      },
-      Google: {
-        "Organic Search": [],
-        "PMax": [],
-        "Ads": [],
-        "YouTube": []
-      }
+  // Restrict selectable target metrics to requested demo outcomes only.
+  const outcomeMetricOptions = useMemo(() => {
+    type OutcomeOption = { label: string; column: string };
+    const byName = new Map(numericCols.map((c) => [c.name, c]));
+    const pick = (candidates: string[]) => candidates.find((name) => byName.has(name));
+    const toOption = (label: string, candidates: string[]): OutcomeOption | null => {
+      const matched = pick(candidates);
+      return matched ? { label, column: matched } : null;
     };
-    
-    numericCols.forEach(col => {
-      const name = col.name;
-      
-      // Amazon - all columns start with Amazon
-      if (name.startsWith('Amazon')) {
-        grouped.Amazon["Sales & Performance"].push(col);
-      }
-      // Shopify - all columns start with Shopify_
-      else if (name.startsWith('Shopify_')) {
-        grouped.Shopify["Sales & Performance"].push(col);
-      }
-      // Google - all columns start with Google_
-      else if (name.startsWith('Google_')) {
-        if (name.includes('_Organic_')) {
-          grouped.Google["Organic Search"].push(col);
-        } else if (name.includes('_PMax_')) {
-          grouped.Google["PMax"].push(col);
-        } else if (name.includes('_Ads_')) {
-          grouped.Google["Ads"].push(col);
-        } else if (name.includes('_YouTube_')) {
-          grouped.Google["YouTube"].push(col);
-        }
-      }
-      // Meta - all columns start with Meta_
-      else if (name.startsWith('Meta_')) {
-        // Skip unknown audience columns
-        if (name.includes('unknown_Audience')) {
-          return;
-        }
-        
-        // Total
-        if (name === 'Meta_Total_Impressions' || name === 'Meta_Total_ThruPlays') {
-          grouped.Meta["Total"].push(col);
-        }
-        // Gender (without age breakdown)
-        else if ((name === 'Meta_female_Impressions' || name === 'Meta_male_Impressions' || 
-                  name === 'Meta_female_ThruPlays' || name === 'Meta_male_ThruPlays')) {
-          grouped.Meta["Gender"].push(col);
-        }
-        // Age × Gender (e.g., Meta_female_45-54_Impressions)
-        else if ((name.includes('_female_') || name.includes('_male_')) && (name.includes('-') || name.includes('+'))) {
-          grouped.Meta["Age × Gender"].push(col);
-        }
-        // Objectives (LEARN_MORE, ORDER_NOW, SHOP_NOW, OUTCOME_ENGAGEMENT, OUTCOME_SALES, Traffic_and_Awareness)
-        else if (name.includes('LEARN_MORE') || name.includes('ORDER_NOW') || name.includes('SHOP_NOW') || 
-                 name.includes('OUTCOME_ENGAGEMENT') || name.includes('OUTCOME_SALES') || name.includes('Traffic_and_Awareness')) {
-          grouped.Meta["Objective"].push(col);
-        }
-        // Media Type (Image, Video, ATC)
-        else if (name.includes('_Image_') || name.includes('_Video_') || name.includes('_ATC_')) {
-          grouped.Meta["Media Type"].push(col);
-        }
-        // Audience (engaged, prospecting only - skip unknown)
-        else if (name.includes('_engaged_') || name.includes('_prospecting_')) {
-          grouped.Meta["Audience"].push(col);
-        }
-        // Skip age groups without gender (Meta_18-24_Impressions, etc.) - these are uncategorized
-        // Don't add them to any category
-      }
-    });
-    
-    return grouped;
+
+    return {
+      Shopify: [
+        toOption("Shopify sales", ["Shopify_Net_items_sold", "Shopify_sales", "Shopify_Sales"]),
+        toOption("Shopify sessions", ["Shopify_Sessions", "Shopify_sessions"]),
+        toOption("Shopify add to cart", ["Shopify_Sessions_With_Cart_Additions", "Shopify_add_to_cart", "Shopify_Add_To_Cart"]),
+      ].filter((item): item is OutcomeOption => item !== null),
+      Amazon: [
+        toOption("Amazon sales", ["Amazon_total_product_sales", "Amazon_sales", "Amazon_Sales"]),
+        toOption("Amazon generic sales", ["Amazon_total_quantity", "Amazon_generic_sales", "Amazon_Generic_Sales"]),
+        toOption("Amazon page visits", ["Amazon_page_visits", "Amazon_page_visit", "Amazon Search Query Volume"]),
+      ].filter((item): item is OutcomeOption => item !== null),
+    };
   }, [numericCols]);
+
+  const outcomeLabelByColumn = useMemo(() => {
+    const entries = [...outcomeMetricOptions.Amazon, ...outcomeMetricOptions.Shopify].map((option) => [option.column, option.label] as const);
+    return new Map(entries);
+  }, [outcomeMetricOptions]);
+
+  const marketingInputOptions = useMemo(
+    () => [
+      { label: "Meta - all impressions", column: "Meta_Total_Impressions" },
+      { label: "Meta - clicks", column: "Marketing_Meta_Clicks" },
+      { label: "Google - all impressions", column: "Marketing_Google_All_Impressions" },
+      { label: "Meta - image impressions", column: "Meta_Image_Impressions" },
+      { label: "Meta - video impressions", column: "Meta_Video_Impressions" },
+      { label: "Meta - video thruplays", column: "Meta_Video_ThruPlays" },
+      { label: "YouTube - video impressions", column: "Google_YouTube_Impressions" },
+      { label: "YouTube - video thruplays", column: "Google_YouTube_Views" },
+      { label: "YouTube - reels impressions", column: "Marketing_YouTube_Reels_Impressions" },
+      { label: "Meta - 21-35yrs_impressions", column: "Marketing_Meta_21_35_Impressions" },
+      { label: "Meta - 35-45yrs_impressions", column: "Meta_35-44_Impressions" },
+      { label: "Meta - 45-55yrs_impressions", column: "Meta_45-54_Impressions" },
+      { label: "Meta - 55yrs+ impressions", column: "Marketing_Meta_55Plus_Impressions" },
+      { label: "Amazon - search ads impressions", column: "Amazon Brand Impressions" },
+      { label: "Amazon - keywords ads impressions", column: "Amazon Search Query Volume" },
+      { label: "Amazon - search clicks", column: "Marketing_Amazon_Search_Clicks" },
+    ],
+    []
+  );
+
+  const marketingLabelByColumn = useMemo(() => {
+    const entries = marketingInputOptions.map((option) => [option.column, option.label] as const);
+    return new Map(entries);
+  }, [marketingInputOptions]);
+
+  const displayMetricName = (columnName: string) =>
+    outcomeLabelByColumn.get(columnName) ??
+    marketingLabelByColumn.get(columnName) ??
+    formatColumnName(columnName);
+
+  useEffect(() => {
+    if (activeOutcomeFilter !== "all" && !targetVariables.includes(activeOutcomeFilter)) {
+      setActiveOutcomeFilter("all");
+    }
+  }, [activeOutcomeFilter, targetVariables]);
+
+  const visibleTargets = useMemo(
+    () => (activeOutcomeFilter === "all" ? targetVariables : targetVariables.filter((t) => t === activeOutcomeFilter)),
+    [activeOutcomeFilter, targetVariables]
+  );
   
   // Load sample data function
   const loadSampleData = async () => {
@@ -469,25 +506,24 @@ export function CrossPlatformAnalysisPage() {
   // Auto-select default metrics when data loads
   useEffect(() => {
     if (filteredDataset && targetVariables.length === 0) {
-      const salesMetrics = filteredDataset.columns
-        .filter(c => c.type === 'numeric' && (
-          c.name === 'Amazon_total_product_sales' || 
-          c.name === 'Shopify_Net_items_sold' ||
-          c.name === 'Amazon_total_quantity'
-        ))
-        .map(c => c.name)
+      const salesMetrics = [
+        ...outcomeMetricOptions.Shopify,
+        ...outcomeMetricOptions.Amazon,
+      ]
+        .filter((option) => option.label === "Shopify sales" || option.label === "Amazon sales")
+        .map((option) => option.column)
         .slice(0, 2);
       
       if (salesMetrics.length > 0) {
         setTargetVariables(salesMetrics);
       }
     }
-  }, [filteredDataset]);
+  }, [filteredDataset, outcomeMetricOptions, targetVariables.length]);
 
   // Calculate correlation with lag
   const calculateLaggedCorrelation = (col1: string, col2: string, lagValue: number, rows?: Record<string, unknown>[]) => {
-    const dataRows = rows || filteredDataset?.rows;
-    if (!dataRows || dataRows.length === 0) return 0;
+    const dataRows = (rows || filteredDataset?.rows || []) as Record<string, unknown>[];
+    if (dataRows.length === 0) return 0;
     const x = dataRows.map((r) => Number(r[col1]) || 0);
     const y = dataRows.map((r) => Number(r[col2]) || 0);
     
@@ -543,8 +579,8 @@ export function CrossPlatformAnalysisPage() {
 
   // Calculate rolling sum correlation
   const calculateRollingSumCorrelation = (xCol: string, yCol: string, window: number, rows?: Record<string, unknown>[]) => {
-    const dataRows = rows || filteredDataset?.rows;
-    if (!dataRows || dataRows.length === 0 || window < 1) return 0;
+    const dataRows = (rows || filteredDataset?.rows || []) as Record<string, unknown>[];
+    if (dataRows.length === 0 || window < 1) return 0;
     
     const x = dataRows.map((r) => Number(r[xCol]) || 0);
     const y = dataRows.map((r) => Number(r[yCol]) || 0);
@@ -566,25 +602,27 @@ export function CrossPlatformAnalysisPage() {
     return calculateCorrelation(xTrimmed, yRollingSum);
   };
 
-  // Multi-target correlation analysis - filter out Objective metrics
+  // Multi-target correlation analysis against the fixed marketing input set.
   const multiTargetAnalysis = useMemo(() => {
     if (!filteredDataset || targetVariables.length === 0 || filteredDataset.rows.length === 0) return null;
     const results: Record<string, { col: string; r0: number; rBest: number; bestLag: number }[]> = {};
+    const numericColNames = new Set(numericCols.map((c) => c.name));
     
     targetVariables.forEach(target => {
       const correlations: { col: string; r0: number; rBest: number; bestLag: number }[] = [];
-      numericCols.forEach(c => {
-        // Skip the target itself and Objective metrics (those are campaign types, not metrics)
-        if (c.name !== target && !c.name.includes('Objective')) {
-          if (correlationMode === "rolling") {
-            const r0 = calculateLaggedCorrelation(target, c.name, 0, filteredDataset.rows);
-            const rRolling = calculateRollingSumCorrelation(c.name, target, rollingWindow, filteredDataset.rows);
-            correlations.push({ col: c.name, r0, rBest: rRolling, bestLag: rollingWindow });
-          } else {
-            const r0 = calculateLaggedCorrelation(target, c.name, 0, filteredDataset.rows);
-            const { r: rBest, lag: bestLag } = findBestLagCorrelation(target, c.name, lagMin, lagMax, filteredDataset.rows);
-            correlations.push({ col: c.name, r0, rBest, bestLag });
-          }
+      marketingInputOptions.forEach((input) => {
+        if (!numericColNames.has(input.column) || input.column === target) {
+          return;
+        }
+
+        if (correlationMode === "rolling") {
+          const r0 = calculateLaggedCorrelation(target, input.column, 0, filteredDataset.rows);
+          const rRolling = calculateRollingSumCorrelation(input.column, target, rollingWindow, filteredDataset.rows);
+          correlations.push({ col: input.column, r0, rBest: rRolling, bestLag: rollingWindow });
+        } else {
+          const r0 = calculateLaggedCorrelation(target, input.column, 0, filteredDataset.rows);
+          const { r: rBest, lag: bestLag } = findBestLagCorrelation(target, input.column, lagMin, lagMax, filteredDataset.rows);
+          correlations.push({ col: input.column, r0, rBest, bestLag });
         }
       });
       correlations.sort((a, b) => Math.abs(b.rBest) - Math.abs(a.rBest));
@@ -592,7 +630,7 @@ export function CrossPlatformAnalysisPage() {
     });
     
     return results;
-  }, [filteredDataset, targetVariables, numericCols, lagMin, lagMax, correlationMode, rollingWindow]);
+  }, [filteredDataset, targetVariables, numericCols, lagMin, lagMax, correlationMode, rollingWindow, showOnlyPositive, marketingInputOptions]);
 
   // Lag analysis for modal
   const multiTargetLagAnalysis = useMemo(() => {
@@ -609,7 +647,7 @@ export function CrossPlatformAnalysisPage() {
   const multiTargetTrendData = useMemo(() => {
     if (!multiTargetModal || !filteredDataset || filteredDataset.rows.length === 0) return null;
     const { target, col, bestLag } = multiTargetModal;
-    const rows = filteredDataset.rows;
+    const rows = filteredDataset.rows as Record<string, unknown>[];
     const colLagged = bestLag !== 0 ? `${col} (lag ${bestLag})` : col;
     
     if (bestLag === 0) {
@@ -647,7 +685,7 @@ export function CrossPlatformAnalysisPage() {
     if (!multiTargetModal || !filteredDataset || filteredDataset.rows.length === 0) return null;
     
     const { target, col, bestLag } = multiTargetModal;
-    const rows = filteredDataset.rows;
+    const rows = filteredDataset.rows as Record<string, unknown>[];
     
     // Prepare data with lag
     let xData: number[] = [];
@@ -731,77 +769,65 @@ export function CrossPlatformAnalysisPage() {
                 {metricsExpanded && (
                   <div className="p-4 bg-white border-t border-[#E5E5E5]">
                     <div className="grid grid-cols-2 gap-6">
-                      {/* Amazon */}
-                      {Object.keys(metricsByPlatform.Amazon).map(category => (
-                        metricsByPlatform.Amazon[category].length > 0 && (
-                          <div key={`Amazon-${category}`}>
-                            <div className="flex items-center gap-2 mb-3">
-                              <img src="/image_resources/amazon.jpg" alt="Amazon" className="w-5 h-5 rounded object-cover" />
-                              <h4 className="text-[13px] font-semibold text-[#333333]">Amazon</h4>
-                            </div>
-                            <div className="space-y-2">
-                              {metricsByPlatform.Amazon[category].map((c) => (
-                                <label
-                                  key={c.name}
-                                  className="flex items-center gap-2.5 cursor-pointer hover:bg-[#FFF8ED] px-3 py-2 rounded-lg transition group"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={targetVariables.includes(c.name)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setTargetVariables(prev => [...prev, c.name]);
-                                      } else {
-                                        setTargetVariables(prev => prev.filter(x => x !== c.name));
-                                      }
-                                    }}
-                                    className="w-4 h-4 rounded border-[#E5E5E5] text-[#FF9500] focus:ring-[#FF9500] focus:ring-offset-0"
-                                  />
-                                  <span className="text-[13px] text-[#555555] group-hover:text-[#333333]">
-                                    {formatColumnName(c.name)}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      ))}
+                      {/* Amazon outcomes */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <img src="/image_resources/amazon.jpg" alt="Amazon" className="w-5 h-5 rounded object-cover" />
+                          <h4 className="text-[13px] font-semibold text-[#333333]">Amazon Outcomes</h4>
+                        </div>
+                        <div className="space-y-2">
+                          {outcomeMetricOptions.Amazon.map((option) => (
+                            <label
+                              key={option.column}
+                              className="flex items-center gap-2.5 cursor-pointer hover:bg-[#FFF8ED] px-3 py-2 rounded-lg transition group"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={targetVariables.includes(option.column)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setTargetVariables((prev) => [...prev, option.column]);
+                                  } else {
+                                    setTargetVariables((prev) => prev.filter((x) => x !== option.column));
+                                  }
+                                }}
+                                className="w-4 h-4 rounded border-[#E5E5E5] text-[#FF9500] focus:ring-[#FF9500] focus:ring-offset-0"
+                              />
+                              <span className="text-[13px] text-[#555555] group-hover:text-[#333333]">{option.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
 
-                      {/* Shopify */}
-                      {Object.keys(metricsByPlatform.Shopify).map(category => (
-                        metricsByPlatform.Shopify[category].length > 0 && (
-                          <div key={`Shopify-${category}`}>
-                            <div className="flex items-center gap-2 mb-3">
-                              <img src="/image_resources/shopify.jpg" alt="Shopify" className="w-5 h-5 rounded object-cover" />
-                              <h4 className="text-[13px] font-semibold text-[#333333]">Shopify</h4>
-                            </div>
-                            <div className="space-y-2">
-                              {metricsByPlatform.Shopify[category].map((c) => (
-                                <label
-                                  key={c.name}
-                                  className="flex items-center gap-2.5 cursor-pointer hover:bg-[#E8F8F0] px-3 py-2 rounded-lg transition group"
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={targetVariables.includes(c.name)}
-                                    onChange={(e) => {
-                                      if (e.target.checked) {
-                                        setTargetVariables(prev => [...prev, c.name]);
-                                      } else {
-                                        setTargetVariables(prev => prev.filter(x => x !== c.name));
-                                      }
-                                    }}
-                                    className="w-4 h-4 rounded border-[#E5E5E5] text-[#2D8A4E] focus:ring-[#2D8A4E] focus:ring-offset-0"
-                                  />
-                                  <span className="text-[13px] text-[#555555] group-hover:text-[#333333]">
-                                    {formatColumnName(c.name)}
-                                  </span>
-                                </label>
-                              ))}
-                            </div>
-                          </div>
-                        )
-                      ))}
+                      {/* Shopify outcomes */}
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <img src="/image_resources/shopify.jpg" alt="Shopify" className="w-5 h-5 rounded object-cover" />
+                          <h4 className="text-[13px] font-semibold text-[#333333]">Shopify Outcomes</h4>
+                        </div>
+                        <div className="space-y-2">
+                          {outcomeMetricOptions.Shopify.map((option) => (
+                            <label
+                              key={option.column}
+                              className="flex items-center gap-2.5 cursor-pointer hover:bg-[#E8F8F0] px-3 py-2 rounded-lg transition group"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={targetVariables.includes(option.column)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setTargetVariables((prev) => [...prev, option.column]);
+                                  } else {
+                                    setTargetVariables((prev) => prev.filter((x) => x !== option.column));
+                                  }
+                                }}
+                                className="w-4 h-4 rounded border-[#E5E5E5] text-[#2D8A4E] focus:ring-[#2D8A4E] focus:ring-offset-0"
+                              />
+                              <span className="text-[13px] text-[#555555] group-hover:text-[#333333]">{option.label}</span>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}
@@ -812,8 +838,8 @@ export function CrossPlatformAnalysisPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   {targetVariables.map(v => (
                     <span key={v} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-[#FFBD59] to-[#FFD699] text-[#333333] rounded-full text-[12px] font-medium shadow-sm">
-                      {formatColumnName(v)}
-                      <button onClick={() => setTargetVariables(prev => prev.filter(x => x !== v))} className="hover:text-[#666666] ml-0.5 text-[16px] leading-none">×</button>
+                      {displayMetricName(v)}
+                      <button onClick={() => setTargetVariables(prev => prev.filter(x => x !== v))} className="hover:text-[#666666] ml-0.5 text-[16px] leading-none">x</button>
                     </span>
                   ))}
                 </div>
@@ -890,48 +916,9 @@ export function CrossPlatformAnalysisPage() {
               )}
             </div>
           </div>
-        </div>
 
-        {/* Filter by Platform */}
-        {targetVariables.length > 0 && (
-          <div className="bg-white rounded-3xl shadow-md border border-slate-100 px-8 py-6 mb-6">
-            <div className="flex items-center justify-between gap-8">
-              {/* Platform Filter */}
-              <div className="flex items-center gap-6">
-                <span className="text-sm font-medium text-slate-500">Platform:</span>
-                <div className="flex items-center gap-3 bg-gradient-to-br from-slate-50 to-slate-100/50 rounded-full px-5 py-2.5 shadow-inner border border-slate-200/50">
-                  <button
-                    onClick={() => setSelectedPlatform("All")}
-                    className="flex items-center gap-2 text-slate-600 hover:text-slate-800 transition-colors"
-                  >
-                    <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z" />
-                    </svg>
-                    <span className="text-base font-medium">All</span>
-                  </button>
-                  {[
-                    { name: "Meta", img: "/image_resources/meta ads.jpg" },
-                    { name: "Shopify", img: "/image_resources/shopify.jpg" },
-                    { name: "Amazon", img: "/image_resources/amazon.jpg" },
-                    { name: "Google", img: "/image_resources/google_ads.jpg" }
-                  ].map((platform) => (
-                    <button
-                      key={platform.name}
-                      onClick={() => setSelectedPlatform(platform.name)}
-                      title={platform.name}
-                      className={`px-5 py-3 rounded-2xl transition-all ${
-                        selectedPlatform === platform.name
-                          ? "bg-gradient-to-br from-cyan-50 to-cyan-100/80 border-2 border-cyan-300 shadow-lg" 
-                          : "bg-white/50 hover:bg-white border-2 border-transparent hover:shadow-md"
-                      }`}
-                    >
-                      <img src={platform.img} alt={platform.name} className="w-8 h-8 object-contain" />
-                    </button>
-                  ))}
-                </div>
-              </div>
-              
-              {/* Date Range Filter */}
+          <div className="mt-6 border-t border-slate-200/80 pt-5">
+            <div className="flex flex-wrap items-center justify-between gap-6">
               <div className="flex items-center gap-3">
                 <span className="text-sm font-medium text-slate-500">Date Range:</span>
                 <div className="flex items-center gap-2">
@@ -954,13 +941,12 @@ export function CrossPlatformAnalysisPage() {
                   />
                 </div>
               </div>
-              
-              {/* Show Only Positive */}
+
               <div>
                 <label className="flex items-center gap-2 cursor-pointer group">
-                  <input 
-                    type="checkbox" 
-                    checked={showOnlyPositive} 
+                  <input
+                    type="checkbox"
+                    checked={showOnlyPositive}
                     onChange={(e) => setShowOnlyPositive(e.target.checked)}
                     className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 focus:ring-offset-0"
                   />
@@ -969,12 +955,44 @@ export function CrossPlatformAnalysisPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Outcome quick filters */}
+        {targetVariables.length > 0 && (
+          <div className="mb-5 flex flex-wrap items-center gap-2">
+            <span className="mr-2 text-sm text-slate-500">Outcome:</span>
+            <button
+              type="button"
+              onClick={() => setActiveOutcomeFilter("all")}
+              className={`rounded-xl border px-4 py-1.5 text-sm font-medium transition ${
+                activeOutcomeFilter === "all"
+                  ? "border-slate-400 bg-slate-100 text-slate-800"
+                  : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+              }`}
+            >
+              All outcomes
+            </button>
+            {targetVariables.map((target) => (
+              <button
+                key={target}
+                type="button"
+                onClick={() => setActiveOutcomeFilter(target)}
+                className={`rounded-xl border px-4 py-1.5 text-sm font-medium transition ${
+                  activeOutcomeFilter === target
+                    ? "border-amber-400 bg-amber-100 text-amber-900"
+                    : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"
+                }`}
+              >
+                {displayMetricName(target)}
+              </button>
+            ))}
+          </div>
         )}
 
         {/* Results Tables */}
-        {multiTargetAnalysis && targetVariables.length > 0 && (
+        {multiTargetAnalysis && visibleTargets.length > 0 && (
           <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {targetVariables.map(target => (
+            {visibleTargets.map(target => (
               <MultiTargetTable 
                 key={target}
                 target={target}
@@ -984,7 +1002,9 @@ export function CrossPlatformAnalysisPage() {
                 onRowClick={(item) => setMultiTargetModal({ target, col: item.col, r: item.rBest, bestLag: item.bestLag })}
                 mode={correlationMode}
                 rollingWindow={rollingWindow}
-                selectedPlatform={selectedPlatform}
+                lagMin={lagMin}
+                lagMax={lagMax}
+                labelByColumn={marketingLabelByColumn}
               />
             ))}
           </div>
@@ -1010,7 +1030,7 @@ export function CrossPlatformAnalysisPage() {
             >
               <div className="flex items-center justify-between px-6 py-4 border-b border-[#F0F0F0]">
                 <div className="flex-1">
-                  <h3 className="text-[20px] font-bold text-[#333333] mb-3">{formatColumnName(multiTargetModal.target)} vs {formatColumnName(multiTargetModal.col)}</h3>
+                  <h3 className="text-[20px] font-bold text-[#333333] mb-3">{displayMetricName(multiTargetModal.target)} vs {displayMetricName(multiTargetModal.col)}</h3>
                   
                   {/* Statistics Cards */}
                   <div className="grid grid-cols-3 gap-3">
@@ -1049,7 +1069,7 @@ export function CrossPlatformAnalysisPage() {
                             {olsResults.elasticity.toFixed(4)}
                           </span>
                           <span className="text-[14px] text-[#999999]">
-                            {olsResults.elasticity > 0 ? '↑' : '↓'}
+                            {olsResults.elasticity > 0 ? 'up' : 'down'}
                           </span>
                         </div>
                         <p className="text-[10px] text-[#999999] mt-1">
@@ -1095,8 +1115,8 @@ export function CrossPlatformAnalysisPage() {
                       <div className="flex-1">
                         <p className="text-[11px] text-[#2C5282] leading-relaxed">
                           <span className="font-semibold">Interpretation:</span> Elasticity of <span className="font-bold text-[#FF9500]">{olsResults.elasticity.toFixed(4)}</span> means 
-                          a 1% increase in <span className="font-medium">{formatColumnName(multiTargetModal.col)}</span> leads to 
-                          a <span className="font-bold text-[#FF9500]">{Math.abs(olsResults.elasticity).toFixed(4)}%</span> {olsResults.elasticity > 0 ? 'increase' : 'decrease'} in <span className="font-medium">{formatColumnName(multiTargetModal.target)}</span>.
+                          a 1% increase in <span className="font-medium">{displayMetricName(multiTargetModal.col)}</span> leads to 
+                          a <span className="font-bold text-[#FF9500]">{Math.abs(olsResults.elasticity).toFixed(4)}%</span> {olsResults.elasticity > 0 ? 'increase' : 'decrease'} in <span className="font-medium">{displayMetricName(multiTargetModal.target)}</span>.
                           {olsResults.pValue < 0.05 ? (
                             <span className="text-[#2D8A4E] font-medium"> This relationship is statistically reliable (p {formatPValue(olsResults.pValue).text}).</span>
                           ) : (
@@ -1130,11 +1150,11 @@ export function CrossPlatformAnalysisPage() {
                     </LineChart>
                   </ResponsiveContainer>
                   <div className="text-[11px] text-[#666666] mt-3 text-center space-y-1">
-                    <p className="font-medium">Best: lag {multiTargetModal.bestLag} → r = {multiTargetModal.r.toFixed(3)}</p>
+                    <p className="font-medium">Best: lag {multiTargetModal.bestLag} {"->"} r = {multiTargetModal.r.toFixed(3)}</p>
                     {olsResults && (
-                      <p className="font-medium text-[#458EE2]">R² = {olsResults.rSquared.toFixed(3)} • β = {olsResults.beta.toFixed(4)}</p>
+                      <p className="font-medium text-[#458EE2]">R2 = {olsResults.rSquared.toFixed(3)} | beta = {olsResults.beta.toFixed(4)}</p>
                     )}
-                    <p className="text-[#999999]">-lag = {formatColumnName(multiTargetModal.target)} leads • +lag = {formatColumnName(multiTargetModal.col)} leads</p>
+                    <p className="text-[#999999]">-lag = {displayMetricName(multiTargetModal.target)} leads | +lag = {displayMetricName(multiTargetModal.col)} leads</p>
                   </div>
                 </div>
 
@@ -1177,3 +1197,4 @@ export function CrossPlatformAnalysisPage() {
     </div>
   );
 }
+
