@@ -16,6 +16,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -166,7 +168,7 @@ const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string 
 const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: "revenue", label: "Revenue", subtitle: "Total sales", kind: "currency", icon: DollarSign, accent: "#0ea5e9" },
   { key: "orders", label: "Orders", subtitle: "Placed orders", kind: "integer", icon: ShoppingCart, accent: "#22c55e" },
-  { key: "media_spend", label: "Media Spend", subtitle: "Total ad spend", kind: "currency", icon: Megaphone, accent: "#f59e0b" },
+  { key: "media_spend", label: "Meta Spend", subtitle: "Meta ad spend", kind: "currency", icon: Megaphone, accent: "#f59e0b" },
   { key: "google_spend", label: "Google Spend", subtitle: "Google channel spend", kind: "currency", icon: Search, accent: "#3b82f6" },
   { key: "aov", label: "AOV", subtitle: "Average order value", kind: "currency", icon: Wallet, accent: "#8b5cf6" },
   { key: "new_customers_pct", label: "New Customers %", subtitle: "New customer share", kind: "percent", icon: Users, accent: "#10b981" },
@@ -1073,8 +1075,8 @@ export function SummaryPage() {
             change_percent: metricsMap['Orders']?.trend_percent || 0
           },
           media_spend: {
-            value: metricsMap['Media Spend']?.formatted_value || '$0',
-            change_percent: metricsMap['Media Spend']?.trend_percent || 0
+            value: metricsMap['Meta Spend']?.formatted_value || metricsMap['Media Spend']?.formatted_value || '$0',
+            change_percent: metricsMap['Meta Spend']?.trend_percent || metricsMap['Media Spend']?.trend_percent || 0
           },
           google_spend: {
             value: metricsMap['Google Spend']?.formatted_value || '$0',
@@ -1465,7 +1467,7 @@ export function SummaryPage() {
                 <p className="text-sm font-semibold text-slate-900">New vs returning customers</p>
                 <div className="mt-4 h-[220px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={sampleObjects(dailyPoints.map(p => ({ 
+                    <BarChart data={sampleObjects(dailyPoints.map(p => ({ 
                       ...p, 
                       new_pct: p.new_customers_pct,
                       returning_pct: 100 - p.new_customers_pct 
@@ -1474,9 +1476,9 @@ export function SummaryPage() {
                       <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
                       <YAxis tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
                       <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
-                      <Line type="monotone" dataKey="new_pct" name="New" stroke="#10b981" strokeWidth={2.5} dot={false} />
-                      <Line type="monotone" dataKey="returning_pct" name="Returning" stroke="#6366f1" strokeWidth={2.5} dot={false} />
-                    </LineChart>
+                      <Bar dataKey="new_pct" name="New" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={10} />
+                      <Bar dataKey="returning_pct" name="Returning" fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={10} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
                 <div className="mt-3 flex items-center gap-4 text-xs">
