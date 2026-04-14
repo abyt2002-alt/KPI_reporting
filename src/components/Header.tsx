@@ -94,6 +94,7 @@ export function Header() {
   const isSummary = activeTab === "summary";
   const isCampaignAssessment = activeTab === "campaign_assessment";
   const isRoasPlayground = activeTab === "roas_playground";
+  const isCrossPlatform = activeTab === "cross_platform_analysis";
   const isCustomSummaryRange = isSummary && summaryTimeRange === "custom";
 
   const handleSummaryRangeChange = (value: SummaryTimeRange) => {
@@ -111,7 +112,15 @@ export function Header() {
         <div className="flex items-center gap-3">
           <div>
             <h2 className="text-lg font-semibold text-slate-800">
-              {isSummary ? "Summary Workspace" : isCampaignAssessment ? "Campaign Assessment" : isRoasPlayground ? "ROAS Playground" : "Ingestion Workspace"}
+              {isSummary 
+                ? "Summary Workspace" 
+                : isCampaignAssessment 
+                  ? "Campaign Assessment" 
+                  : isRoasPlayground 
+                    ? "ROAS Playground" 
+                    : isCrossPlatform
+                      ? "Cross Platform Analysis"
+                      : "Ingestion Workspace"}
             </h2>
             <p className="text-xs text-slate-500">
               {isSummary
@@ -120,7 +129,9 @@ export function Header() {
                   ? "Counterfactual campaign lift and spend reallocation demo"
                 : isRoasPlayground
                   ? "Tool-style ROAS scenario testing and configuration"
-                  : "Source setup and ingestion workflow connected to backend"}
+                  : isCrossPlatform
+                    ? "Discover correlations and lag effects between marketing channels"
+                    : "Source setup and ingestion workflow connected to backend"}
             </p>
           </div>
         </div>

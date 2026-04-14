@@ -3,6 +3,7 @@ import { Header } from './components/Header';
 import { UploadPage } from './modules/UploadPage';
 import { SummaryPage } from './modules/SummaryPage';
 import { CampaignAssessmentPage } from './modules/CampaignAssessmentPage';
+import { CrossPlatformAnalysisPage } from './modules/CrossPlatformAnalysisPage';
 import { RoasPlaygroundPage } from './modules/RoasPlaygroundPage';
 import { LoginPage } from './modules/LoginPage';
 import { useStore } from './store/useStore';
@@ -27,6 +28,9 @@ function App() {
           </div>
           <div style={{ display: activeTab === "campaign_assessment" ? "block" : "none" }}>
             <CampaignAssessmentPage />
+          </div>
+          <div style={{ display: activeTab === "cross_platform_analysis" ? "block" : "none" }}>
+            <CrossPlatformAnalysisPage />
           </div>
           <div style={{ display: activeTab === "roas_playground" ? "block" : "none" }}>
             <RoasPlaygroundPage />

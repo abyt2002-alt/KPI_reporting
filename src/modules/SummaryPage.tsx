@@ -16,6 +16,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import {
+  Bar,
+  BarChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -26,7 +28,7 @@ import {
 } from "recharts";
 import { useStore } from "../store/useStore";
 import type { SummaryCategoryFilter, SummaryMarketFilter, SummarySourceFilter, SummaryTimeRange } from "../store/useStore";
-import { generateKpiCompareSummary, generateKpiSummary, type KpiSummaryResponse } from "../services/api";
+import { generateKpiCompareSummary, generateKpiSummary, generateAIInsights, type KpiSummaryResponse } from "../services/api";
 import { FY25_END_DATE, FY25_START_DATE } from "./summaryConfig";
 
 type Market = "US" | "UK" | "UAE";
@@ -166,7 +168,7 @@ const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string 
 const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: "revenue", label: "Revenue", subtitle: "Total sales", kind: "currency", icon: DollarSign, accent: "#0ea5e9" },
   { key: "orders", label: "Orders", subtitle: "Placed orders", kind: "integer", icon: ShoppingCart, accent: "#22c55e" },
-  { key: "media_spend", label: "Media Spend", subtitle: "Total ad spend", kind: "currency", icon: Megaphone, accent: "#f59e0b" },
+  { key: "media_spend", label: "Meta Spend", subtitle: "Meta ad spend", kind: "currency", icon: Megaphone, accent: "#f59e0b" },
   { key: "google_spend", label: "Google Spend", subtitle: "Google channel spend", kind: "currency", icon: Search, accent: "#3b82f6" },
   { key: "aov", label: "AOV", subtitle: "Average order value", kind: "currency", icon: Wallet, accent: "#8b5cf6" },
   { key: "new_customers_pct", label: "New Customers %", subtitle: "New customer share", kind: "percent", icon: Users, accent: "#10b981" },
@@ -272,6 +274,18 @@ const formatTooltipValue = (definition: MetricDefinition, value: unknown) => {
   if (definition.kind === "integer") return formatValueByKind(definition.kind, Math.round(numericValue));
   if (definition.kind === "duration") return formatValueByKind(definition.kind, Math.round(numericValue));
   return Number(numericValue.toFixed(2)).toString();
+};
+
+const sanitizeAiText = (value: string) =>
+  value
+    .replace(/\*\*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+const stripAiPrefix = (value: string, type: "green" | "red") => {
+  const cleaned = sanitizeAiText(value).replace(/^[^A-Za-z0-9]+/, "");
+  if (type === "green") return cleaned.replace(/^green\s*flag\s*:\s*/i, "").trim();
+  return cleaned.replace(/^red\s*flag\s*:\s*/i, "").trim();
 };
 
 const aggregateTotals = (rows: DailyMarketRow[]): MetricTotals => ({
@@ -1042,25 +1056,102 @@ export function SummaryPage() {
     setIsAiSummaryLoading(true);
     setAiSummaryError(null);
 
-    const result = isCompareMode
-      ? await generateKpiCompareSummary(aiCompareSummaryRequest)
-      : await generateKpiSummary(aiSummaryRequest);
+    // For non-compare mode, use the new Gemini AI insights
+    if (!isCompareMode && aiSummaryMetrics.length === 8) {
+      try {
+        // Extract the 8 metrics with their values and % changes
+        const metricsMap = aiSummaryMetrics.reduce((acc, m) => {
+          acc[m.label] = m;
+          return acc;
+        }, {} as Record<string, typeof aiSummaryMetrics[0]>);
 
-    if (result.error) {
-      setAiSummaryError(result.error);
+        const insightsRequest = {
+          revenue: {
+            value: metricsMap['Revenue']?.formatted_value || '$0',
+            change_percent: metricsMap['Revenue']?.trend_percent || 0
+          },
+          orders: {
+            value: metricsMap['Orders']?.formatted_value || '0',
+            change_percent: metricsMap['Orders']?.trend_percent || 0
+          },
+          media_spend: {
+            value: metricsMap['Meta Spend']?.formatted_value || metricsMap['Media Spend']?.formatted_value || '$0',
+            change_percent: metricsMap['Meta Spend']?.trend_percent || metricsMap['Media Spend']?.trend_percent || 0
+          },
+          google_spend: {
+            value: metricsMap['Google Spend']?.formatted_value || '$0',
+            change_percent: metricsMap['Google Spend']?.trend_percent || 0
+          },
+          aov: {
+            value: metricsMap['AOV']?.formatted_value || '$0',
+            change_percent: metricsMap['AOV']?.trend_percent || 0
+          },
+          new_customers_pct: {
+            value: metricsMap['New Customers %']?.formatted_value || '0%',
+            change_percent: metricsMap['New Customers %']?.trend_percent || 0
+          },
+          meta_roas: {
+            value: metricsMap['Meta ROAS']?.formatted_value || '0.00',
+            change_percent: metricsMap['Meta ROAS']?.trend_percent || 0
+          },
+          google_roas: {
+            value: metricsMap['Google ROAS']?.formatted_value || '0.00',
+            change_percent: metricsMap['Google ROAS']?.trend_percent || 0
+          },
+          region: summaryMarketFilter === "all" ? "All Markets" : summaryMarketFilter,
+          product: SUMMARY_CATEGORY_LABELS[summaryCategoryFilter],
+          period: summaryTimeRange === "custom"
+            ? `${summaryStartDate} to ${summaryEndDate}`
+            : SUMMARY_TIME_LABELS[summaryTimeRange],
+        };
+
+        const result = await generateAIInsights(insightsRequest);
+
+        if (result.error) {
+          setAiSummaryError(result.error);
+        } else if (result.data) {
+          // Transform AI insights response to match the expected format
+          setAiSummary({
+            headline: sanitizeAiText(result.data.headline),
+            overview: sanitizeAiText(result.data.bullets[0] || ''),
+            insights: (result.data.bullets || []).map((line) => sanitizeAiText(line)),
+            actions: [stripAiPrefix(result.data.green_flag, "green")],
+            watchout: stripAiPrefix(result.data.red_flag, "red"),
+            model_used: 'gemini-2.0-flash-exp'
+          });
+          setAiSummarySignature(requestSignature);
+        }
+      } catch (error) {
+        setAiSummaryError(error instanceof Error ? error.message : 'Failed to generate insights');
+      }
     } else {
-      setAiSummary(result.data ?? null);
-      setAiSummarySignature(requestSignature);
+      // Fallback to old compare mode logic
+      const result = isCompareMode
+        ? await generateKpiCompareSummary(aiCompareSummaryRequest)
+        : await generateKpiSummary(aiSummaryRequest);
+
+      if (result.error) {
+        setAiSummaryError(result.error);
+      } else {
+        setAiSummary(result.data ?? null);
+        setAiSummarySignature(requestSignature);
+      }
     }
+    
     setIsAiSummaryLoading(false);
   }, [
     aiCompareSummaryRequest,
-    aiSummaryMetrics.length,
+    aiSummaryMetrics,
     aiSummaryRequest,
     compareLeftAiSummaryMetrics.length,
     compareRightAiSummaryMetrics.length,
     currentAiSummarySignature,
     isCompareMode,
+    summaryCategoryFilter,
+    summaryEndDate,
+    summaryMarketFilter,
+    summaryStartDate,
+    summaryTimeRange,
   ]);
 
   useEffect(() => {
@@ -1153,21 +1244,7 @@ export function SummaryPage() {
           <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_12%_18%,rgba(14,165,233,0.16),transparent_30%),radial-gradient(circle_at_88%_12%,rgba(16,185,129,0.16),transparent_28%),linear-gradient(135deg,rgba(248,250,252,0.98),rgba(255,255,255,0.78))]" />
           <div className="pointer-events-none absolute -right-16 -top-20 h-56 w-56 rounded-full border border-cyan-200/70 bg-cyan-100/30 blur-sm" />
           <div className="relative">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">Trinity Insights</p>
-                <h3 className="mt-1 max-w-3xl text-3xl font-semibold tracking-tight text-slate-950">
-                  {isAiSummaryLoading
-                    ? isCompareMode
-                      ? "Comparing the KPI views"
-                      : "Reading the KPI movement"
-                    : isAiSummaryStale
-                      ? isCompareMode
-                        ? "Comparison changed, regenerate insights"
-                        : "Filters changed, regenerate insights"
-                      : aiSummary?.headline ?? (isCompareMode ? "Comparison summary" : "Performance summary")}
-                </h3>
-              </div>
+            <div className="flex flex-col gap-4">
               <div className="flex flex-wrap items-center justify-end gap-2 text-xs font-semibold">
                 {isCompareMode ? (
                   <>
@@ -1213,6 +1290,23 @@ export function SummaryPage() {
                       ? "Refresh comparison"
                       : "Refresh insights"}
                 </button>
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">Trinity Insights</p>
+                <h3 className="mt-1 text-[2.05rem] font-semibold leading-tight tracking-tight text-slate-950">
+                  {isAiSummaryLoading
+                    ? isCompareMode
+                      ? "Comparing the KPI views"
+                      : "Reading the KPI movement"
+                    : isAiSummaryStale
+                      ? isCompareMode
+                        ? "Comparison changed, regenerate insights"
+                        : "Filters changed, regenerate insights"
+                      : aiSummary?.headline ?? (isCompareMode ? "Comparison summary" : "Performance summary")}
+                </h3>
+                {!isAiSummaryLoading && !isAiSummaryStale && aiSummary?.overview ? (
+                  <p className="mt-3 text-sm leading-6 text-slate-600">{aiSummary.overview}</p>
+                ) : null}
               </div>
             </div>
 
@@ -1261,34 +1355,40 @@ export function SummaryPage() {
 
             {!aiSummaryError && !isAiSummaryLoading && aiSummary ? (
               <div className="mt-6 grid gap-5 lg:grid-cols-[1.18fr_0.82fr]">
-                <div className="rounded-3xl border border-white/80 bg-white/75 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)] backdrop-blur">
-                  <p className="text-base leading-7 text-slate-700">{aiSummary.overview}</p>
-                  <div className="mt-5 grid gap-3 md:grid-cols-2">
-                    {aiSummary.insights.map((insight, index) => (
+                {/* Left side: 3 Insight Bullets */}
+                <div className="rounded-3xl border border-cyan-100/80 bg-white/92 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
+                  <p className="mb-3 text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">Key Signals</p>
+                  <div className="grid gap-3">
+                    {aiSummary.insights.map((bullet, index) => (
                       <div
-                        key={insight}
-                        className="group rounded-2xl border border-slate-200/80 bg-gradient-to-br from-white to-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-md"
+                        key={index}
+                        className="group rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700 shadow-sm transition hover:-translate-y-0.5 hover:border-cyan-200 hover:shadow-md"
                       >
-                        <span className="mb-2 flex h-7 w-7 items-center justify-center rounded-full bg-cyan-50 text-xs font-bold text-cyan-700">
+                        <span className="mb-2 flex h-6 w-6 items-center justify-center rounded-full bg-cyan-50 text-[11px] font-bold text-cyan-700">
                           {index + 1}
                         </span>
-                        {insight}
+                        {bullet}
                       </div>
                     ))}
                   </div>
                 </div>
-                <div className="rounded-3xl border border-slate-200/80 bg-slate-950 p-5 text-white shadow-[0_18px_44px_rgba(15,23,42,0.20)]">
-                  <p className="text-xs font-semibold uppercase tracking-[0.18em] text-cyan-200">Recommended moves</p>
-                  <div className="mt-4 space-y-3">
-                    {aiSummary.actions.map((action) => (
-                      <div key={action} className="rounded-2xl border border-white/10 bg-white/8 px-4 py-3 text-sm leading-6 text-slate-100">
-                        {action}
-                      </div>
-                    ))}
+
+                {/* Right side: Green Flag and Red Flag */}
+                <div className="space-y-4">
+                  {/* Green Flag */}
+                  <div className="rounded-3xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Green Flag</p>
+                    <div className="text-sm leading-6 text-slate-700">
+                      {aiSummary.actions[0]}
+                    </div>
                   </div>
-                  <div className="mt-5 rounded-2xl border border-amber-300/30 bg-amber-300/10 px-4 py-3">
-                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-200">Watchout</p>
-                    <p className="mt-2 text-sm leading-6 text-amber-50">{aiSummary.watchout}</p>
+
+                  {/* Red Flag */}
+                  <div className="rounded-3xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Watchout</p>
+                    <div className="text-sm leading-6 text-slate-700">
+                      {aiSummary.watchout}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1302,7 +1402,7 @@ export function SummaryPage() {
             <div className="mb-6">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Sales deep dive</p>
               <p className="mt-1 text-sm text-slate-600">
-                Weekly sales — last {selectedDates.length} {selectedDates.length === 1 ? 'day' : 'days'}
+                Weekly sales - last {selectedDates.length} {selectedDates.length === 1 ? 'day' : 'days'}
               </p>
             </div>
 
@@ -1367,7 +1467,7 @@ export function SummaryPage() {
                 <p className="text-sm font-semibold text-slate-900">New vs returning customers</p>
                 <div className="mt-4 h-[220px]">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={sampleObjects(dailyPoints.map(p => ({ 
+                    <BarChart data={sampleObjects(dailyPoints.map(p => ({ 
                       ...p, 
                       new_pct: p.new_customers_pct,
                       returning_pct: 100 - p.new_customers_pct 
@@ -1376,9 +1476,9 @@ export function SummaryPage() {
                       <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
                       <YAxis tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => `${v}%`} />
                       <Tooltip formatter={(v) => `${Number(v).toFixed(1)}%`} />
-                      <Line type="monotone" dataKey="new_pct" name="New" stroke="#10b981" strokeWidth={2.5} dot={false} />
-                      <Line type="monotone" dataKey="returning_pct" name="Returning" stroke="#6366f1" strokeWidth={2.5} dot={false} />
-                    </LineChart>
+                      <Bar dataKey="new_pct" name="New" fill="#10b981" radius={[3, 3, 0, 0]} maxBarSize={10} />
+                      <Bar dataKey="returning_pct" name="Returning" fill="#6366f1" radius={[3, 3, 0, 0]} maxBarSize={10} />
+                    </BarChart>
                   </ResponsiveContainer>
                 </div>
                 <div className="mt-3 flex items-center gap-4 text-xs">
@@ -1590,98 +1690,95 @@ export function SummaryPage() {
                 </div>
               </div>
 
-              {/* Spend split + Key metrics */}
-              <div className="space-y-5">
-                {/* Spend split donut */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <p className="text-sm font-semibold text-slate-900">Spend split</p>
-                  <div className="mt-4 flex items-center justify-center">
-                    <div className="relative h-[140px] w-[140px]">
-                      <svg viewBox="0 0 100 100" className="transform -rotate-90">
-                        <circle cx="50" cy="50" r="40" fill="none" stroke="#3b82f6" strokeWidth="20" strokeDasharray="188.5 251.3" />
-                        <circle cx="50" cy="50" r="40" fill="none" stroke="#ef4444" strokeWidth="20" strokeDasharray="62.8 251.3" strokeDashoffset="-188.5" />
-                      </svg>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="text-center">
-                          <p className="text-xs text-slate-500">Total</p>
-                          <p className="text-lg font-bold text-slate-900">100%</p>
-                        </div>
+              {/* Spend split donut */}
+              <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Spend split</p>
+                <div className="mt-4 flex items-center justify-center">
+                  <div className="relative h-[140px] w-[140px]">
+                    <svg viewBox="0 0 100 100" className="transform -rotate-90">
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#3b82f6" strokeWidth="20" strokeDasharray="188.5 251.3" />
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#ef4444" strokeWidth="20" strokeDasharray="62.8 251.3" strokeDashoffset="-188.5" />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-xs text-slate-500">Total</p>
+                        <p className="text-lg font-bold text-slate-900">100%</p>
                       </div>
-                    </div>
-                  </div>
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="h-3 w-3 rounded-full bg-blue-500" />
-                        <span className="text-slate-600">Google CPC</span>
-                      </div>
-                      <span className="font-semibold text-slate-900">75%</span>
-                    </div>
-                    <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2">
-                        <div className="h-3 w-3 rounded-full bg-red-500" />
-                        <span className="text-slate-600">Meta Ads</span>
-                      </div>
-                      <span className="font-semibold text-slate-900">25%</span>
                     </div>
                   </div>
                 </div>
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-blue-500" />
+                      <span className="text-slate-600">Google CPC</span>
+                    </div>
+                    <span className="font-semibold text-slate-900">75%</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-red-500" />
+                      <span className="text-slate-600">Meta Ads</span>
+                    </div>
+                    <span className="font-semibold text-slate-900">25%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
 
-                {/* Key metrics */}
-                <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <div className="mb-3 flex items-center justify-between">
-                    <p className="text-sm font-semibold text-slate-900">Key metrics</p>
-                    <div className="flex gap-1">
-                      <button 
-                        onClick={() => setMarketingChannel('blended')}
-                        className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'blended' ? 'bg-slate-100 text-slate-700' : 'text-slate-500'}`}
-                      >
-                        Blended
-                      </button>
-                      <button 
-                        onClick={() => setMarketingChannel('meta')}
-                        className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'meta' ? 'bg-rose-100 text-rose-700' : 'text-slate-500'}`}
-                      >
-                        Meta
-                      </button>
-                      <button 
-                        onClick={() => setMarketingChannel('google')}
-                        className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'google' ? 'bg-blue-100 text-blue-700' : 'text-slate-500'}`}
-                      >
-                        Google
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">ROAS</p>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">
-                        {marketingChannel === 'meta' ? '2.42x' : marketingChannel === 'google' ? '3.18x' : '2.80x'}
-                      </p>
-                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPA</p>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">
-                        {marketingChannel === 'meta' ? '$16.80' : marketingChannel === 'google' ? '$12.40' : '$14.60'}
-                      </p>
-                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CTR</p>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">
-                        {marketingChannel === 'meta' ? '3.18%' : marketingChannel === 'google' ? '1.94%' : '2.56%'}
-                      </p>
-                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPC</p>
-                      <p className="mt-1 text-2xl font-bold text-slate-900">
-                        {marketingChannel === 'meta' ? '$0.94' : marketingChannel === 'google' ? '$1.32' : '$1.13'}
-                      </p>
-                      <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
-                    </div>
-                  </div>
+            {/* Key metrics - Full width below */}
+            <div className="mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-3 flex items-center justify-between">
+                <p className="text-sm font-semibold text-slate-900">Key metrics</p>
+                <div className="flex gap-1">
+                  <button 
+                    onClick={() => setMarketingChannel('blended')}
+                    className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'blended' ? 'bg-slate-100 text-slate-700' : 'text-slate-500'}`}
+                  >
+                    Blended
+                  </button>
+                  <button 
+                    onClick={() => setMarketingChannel('meta')}
+                    className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'meta' ? 'bg-rose-100 text-rose-700' : 'text-slate-500'}`}
+                  >
+                    Meta
+                  </button>
+                  <button 
+                    onClick={() => setMarketingChannel('google')}
+                    className={`rounded-md px-2 py-1 text-[10px] font-semibold ${marketingChannel === 'google' ? 'bg-blue-100 text-blue-700' : 'text-slate-500'}`}
+                  >
+                    Google
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">ROAS</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">
+                    {marketingChannel === 'meta' ? '2.42x' : marketingChannel === 'google' ? '3.18x' : '2.80x'}
+                  </p>
+                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPA</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">
+                    {marketingChannel === 'meta' ? '$16.80' : marketingChannel === 'google' ? '$12.40' : '$14.60'}
+                  </p>
+                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CTR</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">
+                    {marketingChannel === 'meta' ? '3.18%' : marketingChannel === 'google' ? '1.94%' : '2.56%'}
+                  </p>
+                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPC</p>
+                  <p className="mt-1 text-2xl font-bold text-slate-900">
+                    {marketingChannel === 'meta' ? '$0.94' : marketingChannel === 'google' ? '$1.32' : '$1.13'}
+                  </p>
+                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
                 </div>
               </div>
             </div>
@@ -1766,7 +1863,7 @@ export function SummaryPage() {
               {/* Top campaigns */}
               <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                 <p className="text-sm font-semibold text-slate-900">Top 5 campaigns by share of spend</p>
-                <div className="mt-4 space-y-3">
+                <div className="mt-6 space-y-5">
                   {[
                     { name: 'Summer sale — LA', meta: '24.7%', google: '28.4%' },
                     { name: 'Retargeting — ATC', meta: '18.8%', google: '22.7%' },
@@ -1775,9 +1872,9 @@ export function SummaryPage() {
                     { name: 'UGC — new creative', meta: '9.7%', google: '8.9%' },
                   ].map((campaign) => (
                     <div key={campaign.name}>
-                      <div className="mb-1.5 flex items-center justify-between text-xs">
+                      <div className="flex items-center justify-between text-sm">
                         <span className="font-medium text-slate-700">{campaign.name}</span>
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-4">
                           <span className="text-slate-600">
                             <span className="font-semibold text-blue-600">{campaign.google}</span> Google
                           </span>

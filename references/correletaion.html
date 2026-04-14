@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Correlation Leaderboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #f5f5f3; color: #1a1a18; padding: 2rem; }
+  .page { max-width: 900px; margin: 0 auto; }
+  .page-header { margin-bottom: 1.5rem; }
+  .page-title { font-size: 20px; font-weight: 500; color: #1a1a18; }
+  .page-sub { font-size: 13px; color: #5f5e5a; margin-top: 2px; }
+
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 1rem; flex-wrap: wrap; align-items: center; }
+  .filter-label { font-size: 12px; color: #888780; margin-right: 4px; }
+  .filter-btn { font-size: 12px; font-weight: 500; padding: 6px 14px; border-radius: 8px; border: 0.5px solid rgba(0,0,0,0.18); background: #ffffff; color: #5f5e5a; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  .filter-btn:hover { background: #f1efe8; }
+  .filter-btn.active-all { background: #f1efe8; color: #2c2c2a; border-color: #b4b2a9; }
+  .filter-btn.active-shopify { background: #EEEDFE; color: #3C3489; border-color: #AFA9EC; }
+  .filter-btn.active-amazon-sales { background: #FAEEDA; color: #633806; border-color: #EF9F27; }
+  .filter-btn.active-amazon-visits { background: #E1F5EE; color: #085041; border-color: #5DCAA5; }
+
+  .col-headers { display: grid; grid-template-columns: 24px 170px minmax(0,1fr) 110px 150px; gap: 12px; align-items: center; padding: 0 16px 8px; }
+  .col-h { font-size: 11px; color: #888780; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .leaderboard { background: #ffffff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; overflow: hidden; }
+
+  .lb-row { display: grid; grid-template-columns: 24px 170px minmax(0,1fr) 110px 150px; gap: 12px; align-items: center; padding: 13px 16px; border-bottom: 0.5px solid rgba(0,0,0,0.08); cursor: pointer; transition: background 0.12s; }
+  .lb-row:last-child { border-bottom: none; }
+  .lb-row:hover { background: #f8f8f6; }
+
+  .rank { font-size: 12px; color: #b4b2a9; font-weight: 500; }
+
+  .outcome-col { display: flex; flex-direction: column; gap: 2px; }
+  .outcome-name { font-size: 12px; font-weight: 500; }
+  .outcome-shopify { color: #3C3489; }
+  .outcome-amazon-sales { color: #633806; }
+  .outcome-amazon-visits { color: #085041; }
+  .outcome-platform { font-size: 11px; color: #888780; }
+
+  .input-col { display: flex; flex-direction: column; gap: 2px; }
+  .input-name { font-size: 13px; color: #1a1a18; }
+  .input-source { font-size: 11px; color: #888780; }
+
+  .r-cell { display: flex; flex-direction: column; gap: 4px; }
+  .r-val { font-size: 13px; font-weight: 500; }
+  .r-pos { color: #3b6d11; }
+  .r-neg { color: #a32d2d; }
+  .r-mid { color: #854f0b; }
+  .bar-track { height: 4px; background: rgba(0,0,0,0.08); border-radius: 2px; overflow: hidden; }
+  .bar-fill { height: 100%; border-radius: 2px; }
+
+  .lag-timeline { display: flex; flex-direction: column; gap: 5px; }
+  .timeline-track { position: relative; height: 6px; background: rgba(0,0,0,0.07); border-radius: 3px; }
+  .timeline-dot { position: absolute; top: 50%; transform: translate(-50%, -50%); width: 10px; height: 10px; border-radius: 50%; border: 2px solid #ffffff; }
+  .timeline-label { font-size: 11px; color: #888780; }
+
+  .see-more { width: 100%; padding: 12px; background: #ffffff; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 12px; margin-top: 8px; font-size: 13px; color: #5f5e5a; cursor: pointer; transition: all 0.15s; font-family: inherit; }
+  .see-more:hover { background: #f1efe8; color: #1a1a18; }
+
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 100; align-items: flex-start; justify-content: center; padding: 2rem; overflow-y: auto; }
+  .modal-backdrop.open { display: flex; }
+  .modal { background: #ffffff; border-radius: 16px; border: 0.5px solid rgba(0,0,0,0.12); width: 100%; max-width: 900px; padding: 1.5rem; }
+  .modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem; }
+  .modal-title { font-size: 16px; font-weight: 500; }
+  .modal-close { background: none; border: 0.5px solid rgba(0,0,0,0.18); border-radius: 8px; padding: 4px 12px; font-size: 13px; cursor: pointer; color: #5f5e5a; font-family: inherit; }
+  .modal-close:hover { background: #f1efe8; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-header">
+    <div class="page-title">Correlation leaderboard</div>
+    <div class="page-sub">Ranked by strongest correlation · Jan 2025 – Nov 2025 · Lag range 0–15 days</div>
+  </div>
+
+  <div class="filter-bar">
+    <span class="filter-label">Outcome:</span>
+    <button class="filter-btn active-all" onclick="filter('all', this)">All outcomes</button>
+    <button class="filter-btn" onclick="filter('shopify', this)">Shopify sales</button>
+    <button class="filter-btn" onclick="filter('amazon-sales', this)">Amazon sales</button>
+    <button class="filter-btn" onclick="filter('amazon-visits', this)">Amazon page visits</button>
+  </div>
+
+  <div class="col-headers">
+    <span class="col-h">#</span>
+    <span class="col-h">Outcome</span>
+    <span class="col-h">Marketing input</span>
+    <span class="col-h">Best r</span>
+    <span class="col-h">Lag (0 – 15 days)</span>
+  </div>
+
+  <div class="leaderboard" id="leaderboard"></div>
+  <button class="see-more" id="see-more-btn" onclick="openModal()">See all correlations ↓</button>
+</div>
+
+<div class="modal-backdrop" id="modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">All correlations</span>
+      <button class="modal-close" onclick="closeModal()">Close</button>
+    </div>
+    <div class="col-headers">
+      <span class="col-h">#</span>
+      <span class="col-h">Outcome</span>
+      <span class="col-h">Marketing input</span>
+      <span class="col-h">Best r</span>
+      <span class="col-h">Lag (0 – 15 days)</span>
+    </div>
+    <div class="leaderboard" id="modal-leaderboard"></div>
+  </div>
+</div>
+
+<script>
+const MAX_LAG = 15;
+
+const ALL_DATA = [
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – video thruplays',          inputSource: 'Meta',    r:  0.81, lag: 3  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – all impressions',          inputSource: 'Meta',    r:  0.76, lag: 5  },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'YouTube – video thruplays',       inputSource: 'YouTube', r:  0.71, lag: 7  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – clicks',                   inputSource: 'Meta',    r:  0.68, lag: 2  },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'YouTube – video impressions',     inputSource: 'YouTube', r:  0.65, lag: 4  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – 21–35yrs impressions',     inputSource: 'Meta',    r:  0.63, lag: 6  },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Google – all impressions',        inputSource: 'Google',  r:  0.61, lag: 0  },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – video impressions',        inputSource: 'Meta',    r:  0.58, lag: 8  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – image impressions',        inputSource: 'Meta',    r:  0.54, lag: 4  },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – 35–45yrs impressions',     inputSource: 'Meta',    r:  0.51, lag: 9  },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – all impressions',          inputSource: 'Meta',    r:  0.47, lag: 3  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'YouTube – video impressions',     inputSource: 'YouTube', r:  0.44, lag: 11 },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – video impressions',        inputSource: 'Meta',    r:  0.41, lag: 6  },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Google – all impressions',        inputSource: 'Google',  r:  0.38, lag: 2  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – 45yrs+ impressions',       inputSource: 'Meta',    r:  0.35, lag: 7  },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – clicks',                   inputSource: 'Meta',    r:  0.29, lag: 13 },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – 45yrs+ impressions',       inputSource: 'Meta',    r: -0.31, lag: 10 },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – image impressions',        inputSource: 'Meta',    r: -0.27, lag: 14 },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – 21–35yrs impressions',     inputSource: 'Meta',    r: -0.24, lag: 12 },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'YouTube – video thruplays',       inputSource: 'YouTube', r:  0.22, lag: 15 },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – 21–35yrs impressions',     inputSource: 'Meta',    r:  0.19, lag: 8  },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – clicks',                   inputSource: 'Meta',    r:  0.17, lag: 5  },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – 45yrs+ impressions',       inputSource: 'Meta',    r: -0.14, lag: 11 },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – 35–45yrs impressions',     inputSource: 'Meta',    r:  0.11, lag: 6  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – 35–45yrs impressions',     inputSource: 'Meta',    r:  0.09, lag: 9  },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'YouTube – video thruplays',       inputSource: 'YouTube', r:  0.08, lag: 13 },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Google – all impressions',        inputSource: 'Google',  r: -0.07, lag: 15 },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – video thruplays',          inputSource: 'Meta',    r:  0.06, lag: 10 },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – image impressions',        inputSource: 'Meta',    r: -0.05, lag: 7  },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'YouTube – video impressions',     inputSource: 'YouTube', r:  0.04, lag: 12 },
+  { outcome: 'amazon-visits', outcomeName: 'Amazon page visits',  input: 'Meta – video thruplays',          inputSource: 'Meta',    r:  0.03, lag: 1  },
+  { outcome: 'shopify',       outcomeName: 'Shopify sales',       input: 'Meta – video impressions',        inputSource: 'Meta',    r:  0.02, lag: 14 },
+  { outcome: 'amazon-sales',  outcomeName: 'Amazon sales',        input: 'Meta – all impressions',          inputSource: 'Meta',    r: -0.02, lag: 15 },
+];
+
+let activeFilter = 'all';
+
+function getDotColor(lag) {
+  if (lag === 0) return '#639922';
+  if (lag <= 7) return '#BA7517';
+  return '#534AB7';
+}
+
+function getRClass(r) {
+  if (r >= 0.5) return 'r-pos';
+  if (r < 0) return 'r-neg';
+  return 'r-mid';
+}
+
+function getBarColor(r) {
+  if (r >= 0.5) return '#639922';
+  if (r < 0) return '#E24B4A';
+  return '#EF9F27';
+}
+
+function getOutcomeClass(outcome) {
+  if (outcome === 'shopify') return 'outcome-shopify';
+  if (outcome === 'amazon-sales') return 'outcome-amazon-sales';
+  return 'outcome-amazon-visits';
+}
+
+function renderRows(data, container) {
+  container.innerHTML = '';
+  data.forEach((d, i) => {
+    const lagPct = (d.lag / MAX_LAG) * 100;
+    const dotColor = getDotColor(d.lag);
+    const barW = Math.abs(d.r) * 100;
+    const row = document.createElement('div');
+    row.className = 'lb-row';
+    row.innerHTML = `
+      <span class="rank">${i + 1}</span>
+      <div class="outcome-col">
+        <span class="outcome-name ${getOutcomeClass(d.outcome)}">${d.outcomeName}</span>
+        <span class="outcome-platform">outcome metric</span>
+      </div>
+      <div class="input-col">
+        <span class="input-name">${d.input}</span>
+        <span class="input-source">${d.inputSource}</span>
+      </div>
+      <div class="r-cell">
+        <span class="r-val ${getRClass(d.r)}">${d.r.toFixed(2)}</span>
+        <div class="bar-track"><div class="bar-fill" style="width:${barW.toFixed(1)}%;background:${getBarColor(d.r)};"></div></div>
+      </div>
+      <div class="lag-timeline">
+        <div class="timeline-track">
+          <div class="timeline-dot" style="left:${lagPct.toFixed(1)}%;background:${dotColor};"></div>
+        </div>
+        <div class="timeline-label">${d.lag === 0 ? 'immediate' : `peaks at day ${d.lag}`}</div>
+      </div>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function filter(type, btn) {
+  activeFilter = type;
+  document.querySelectorAll('.filter-btn').forEach(b => { b.className = 'filter-btn'; });
+  btn.classList.add('active-' + type);
+  renderMain();
+}
+
+function renderMain() {
+  const filtered = activeFilter === 'all' ? ALL_DATA : ALL_DATA.filter(d => d.outcome === activeFilter);
+  const sorted = [...filtered].sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+  renderRows(sorted.slice(0, 10), document.getElementById('leaderboard'));
+  const btn = document.getElementById('see-more-btn');
+  btn.textContent = `See all ${sorted.length} correlations ↓`;
+  btn.style.display = sorted.length <= 10 ? 'none' : 'block';
+}
+
+function openModal() {
+  const filtered = activeFilter === 'all' ? ALL_DATA : ALL_DATA.filter(d => d.outcome === activeFilter);
+  const sorted = [...filtered].sort((a, b) => Math.abs(b.r) - Math.abs(a.r));
+  renderRows(sorted, document.getElementById('modal-leaderboard'));
+  document.getElementById('modal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.remove('open');
+}
+
+renderMain();
+</script>
+</body>
+</html>

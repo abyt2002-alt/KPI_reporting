@@ -19,6 +19,7 @@ from database.connection import init_db
 from routes.db_routes import router as db_router
 from routes.upload_summary import router as upload_summary_router
 from routes.ingestion import router as ingestion_router
+from routes.ai_insights_routes import router as ai_insights_router
 
 app = FastAPI(
     title="Report Maker API",
@@ -36,6 +37,7 @@ async def startup_event():
 app.include_router(db_router)
 app.include_router(upload_summary_router)
 app.include_router(ingestion_router)
+app.include_router(ai_insights_router)
 
 # Parse CORS origins from environment variable if provided.
 def get_cors_origins() -> List[str]:
@@ -55,10 +57,21 @@ def get_cors_origins() -> List[str]:
         "http://127.0.0.1:3000",
     ]
 
+
+def get_cors_origin_regex() -> Optional[str]:
+    """
+    Allow local private-network dev origins (LAN testing), unless overridden by env.
+    """
+    env_regex = os.getenv("CORS_ORIGIN_REGEX", "").strip()
+    if env_regex:
+        return env_regex
+    return r"^https?://(localhost|127\.0\.0\.1|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$"
+
 # CORS - Allow React frontend to connect
 app.add_middleware(
     CORSMiddleware,
     allow_origins=get_cors_origins(),
+    allow_origin_regex=get_cors_origin_regex(),
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
