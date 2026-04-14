@@ -3,13 +3,11 @@
  */
 
 // In production behind Nginx, use same-origin paths by default.
-// In local dev, fall back to the FastAPI backend on 127.0.0.1:8002.
+// In local dev, also prefer same-origin and rely on Vite proxy.
 const rawApiUrl = import.meta.env.VITE_API_URL?.trim();
 const API_BASE_URL = rawApiUrl
   ? rawApiUrl.replace(/\/+$/, "")
-  : import.meta.env.DEV
-    ? "http://127.0.0.1:8002"
-    : "";
+  : "";
 
 // Log the API URL for debugging
 console.log('[API] Backend URL:', API_BASE_URL);
@@ -450,4 +448,43 @@ export async function loginUser(params: {
     method: 'POST',
     body: JSON.stringify(params),
   });
+}
+
+
+// ============== AI INSIGHTS API ==============
+
+export interface MetricValue {
+  value: string;
+  change_percent: number;
+}
+
+export interface AIInsightsRequest {
+  revenue: MetricValue;
+  orders: MetricValue;
+  media_spend: MetricValue;
+  google_spend: MetricValue;
+  aov: MetricValue;
+  new_customers_pct: MetricValue;
+  meta_roas: MetricValue;
+  google_roas: MetricValue;
+  region?: string;
+  product?: string;
+  period?: string;
+}
+
+export interface AIInsightsResponse {
+  headline: string;
+  bullets: string[];
+  green_flag: string;
+  red_flag: string;
+}
+
+/**
+ * Generate AI insights based on 8 KPI metrics
+ */
+export async function generateAIInsights(params: AIInsightsRequest): Promise<ApiResponse<AIInsightsResponse>> {
+  return fetchApi('/ai/generate-insights', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  }, 30000);
 }

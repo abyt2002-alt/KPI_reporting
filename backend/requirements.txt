@@ -18,7 +18,7 @@ scipy>=1.11.0
 statsmodels>=0.14.0
 
 # AI
-google-genai>=1.56.0
+google-genai>=1.0.0
 
 # Optional: Advanced ML
 # xgboost>=2.0.0

@@ -227,7 +227,7 @@ interface AppState {
   currentReportItems: ReportItem[];
   // Saved reports
   savedReports: SavedReport[];
-  activeTab: 'upload' | 'summary' | 'campaign_assessment' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports';
+  activeTab: 'upload' | 'summary' | 'campaign_assessment' | 'cross_platform_analysis' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports';
   summaryTimeRange: SummaryTimeRange;
   summaryMarketFilter: SummaryMarketFilter;
   summaryCategoryFilter: SummaryCategoryFilter;
@@ -264,7 +264,7 @@ interface AppState {
   addChart: (chart: ChartConfig) => void;
   removeChart: (id: string) => void;
   updateChart: (id: string, updates: Partial<ChartConfig>) => void;
-  setActiveTab: (tab: 'upload' | 'summary' | 'campaign_assessment' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports') => void;
+  setActiveTab: (tab: 'upload' | 'summary' | 'campaign_assessment' | 'cross_platform_analysis' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports') => void;
   setSummaryTimeRange: (range: SummaryTimeRange) => void;
   setSummaryMarketFilter: (market: SummaryMarketFilter) => void;
   setSummaryCategoryFilter: (category: SummaryCategoryFilter) => void;
