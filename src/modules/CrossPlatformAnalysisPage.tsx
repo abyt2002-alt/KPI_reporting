@@ -152,26 +152,28 @@ function formatPValue(p: number): { text: string; stars: string; color: string }
 
 // Multi-target correlation table component
 function MultiTargetTable({
-  target,
+  title,
   data,
   showOnlyPositive,
-  onRemove,
   onRowClick,
   mode,
   rollingWindow,
   lagMin,
   lagMax,
+  showTargetColumn,
+  targetLabelByColumn,
   labelByColumn,
 }: {
-  target: string;
-  data: { col: string; r0: number; rBest: number; bestLag: number }[];
+  title: string;
+  data: { target: string; col: string; r0: number; rBest: number; bestLag: number }[];
   showOnlyPositive: boolean;
-  onRemove: () => void;
-  onRowClick: (item: { col: string; r0: number; rBest: number; bestLag: number }) => void;
+  onRowClick: (item: { target: string; col: string; r0: number; rBest: number; bestLag: number }) => void;
   mode: "lag" | "rolling";
   rollingWindow?: number;
   lagMin: number;
   lagMax: number;
+  showTargetColumn: boolean;
+  targetLabelByColumn?: Map<string, string>;
   labelByColumn?: Map<string, string>;
 }) {
   const tableRef = useRef<HTMLDivElement>(null);
@@ -181,20 +183,22 @@ function MultiTargetTable({
     <div ref={tableRef} className="border border-[#E5E5E5] rounded-xl overflow-hidden shadow-sm">
       <div className="bg-[#FFBD59] px-4 py-3 flex items-center justify-between">
         <div>
-          <h4 className="text-[16px] font-bold text-[#333333]">{target}</h4>
+          <h4 className="text-[16px] font-bold text-[#333333]">{title}</h4>
           {mode === "rolling" && (
             <p className="text-[11px] text-[#333333]/70">Rolling sum of {rollingWindow} periods</p>
           )}
         </div>
-        <button onClick={onRemove} className="text-[#333333]/60 hover:text-[#333333] text-[20px] leading-none">x</button>
       </div>
       <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
         <table className="w-full table-fixed text-[12px]">
           <thead className="bg-[#F5F5F5] sticky top-0 z-10">
             <tr>
-              <th className="w-[40%] text-left px-3 py-3 text-[#475569] font-semibold">Column</th>
-              <th className="w-[28%] text-left px-3 py-3 text-[#475569] font-semibold">Best r</th>
-              <th className="w-[32%] text-left px-3 py-3 text-[#475569] font-semibold">
+              {showTargetColumn && (
+                <th className="w-[22%] text-left px-3 py-3 text-[#475569] font-semibold">Outcome</th>
+              )}
+              <th className={`${showTargetColumn ? "w-[30%]" : "w-[40%]"} text-left px-3 py-3 text-[#475569] font-semibold`}>Column</th>
+              <th className={`${showTargetColumn ? "w-[23%]" : "w-[28%]"} text-left px-3 py-3 text-[#475569] font-semibold`}>Best r</th>
+              <th className={`${showTargetColumn ? "w-[25%]" : "w-[32%]"} text-left px-3 py-3 text-[#475569] font-semibold`}>
                 {mode === "rolling" ? `Window (${rollingWindow})` : `Lag (${lagMin} - ${lagMax} days)`}
               </th>
             </tr>
@@ -204,20 +208,20 @@ function MultiTargetTable({
               ?.filter(item => !showOnlyPositive || item.rBest > 0)
               .filter(item => item.col.toLowerCase() !== 'week')
               .sort((a, b) => {
-                // When showing only positive, sort by rBest descending (highest positive first)
-                // When showing all, sort by absolute value descending (strongest correlation first)
-                if (showOnlyPositive) {
-                  return b.rBest - a.rBest;
-                } else {
-                  return Math.abs(b.rBest) - Math.abs(a.rBest);
-                }
+                // Always sort by highest Best r globally (descending).
+                return b.rBest - a.rBest;
               })
               .map((item, idx) => (
               <tr 
-                key={item.col}
+                key={`${item.target}:${item.col}`}
                 onClick={() => onRowClick(item)}
                 className={`cursor-pointer hover:bg-[#F8FAFC] transition border-b border-[#F0F0F0] ${idx === 0 ? "bg-[#F8FAFC]" : ""}`}
               >
+                {showTargetColumn && (
+                  <td className="px-3 py-2.5 text-[#334155] align-top">
+                    <span className="inline-block align-middle break-words leading-4">{targetLabelByColumn?.get(item.target) ?? formatColumnName(item.target)}</span>
+                  </td>
+                )}
                 <td className="px-3 py-2.5 text-[#1E293B] align-top" title={item.col}>
                   {idx === 0 && <span className="text-[#0F766E] mr-1.5">*</span>}
                   <span className="inline-block align-middle break-words leading-4">{labelByColumn?.get(item.col) ?? formatColumnName(item.col)}</span>
@@ -632,6 +636,16 @@ export function CrossPlatformAnalysisPage() {
     return results;
   }, [filteredDataset, targetVariables, numericCols, lagMin, lagMax, correlationMode, rollingWindow, showOnlyPositive, marketingInputOptions]);
 
+  const combinedTargetRows = useMemo(() => {
+    if (!multiTargetAnalysis) return [];
+    return visibleTargets.flatMap((target) =>
+      (multiTargetAnalysis[target] || []).map((item) => ({
+        target,
+        ...item,
+      }))
+    );
+  }, [multiTargetAnalysis, visibleTargets]);
+
   // Lag analysis for modal
   const multiTargetLagAnalysis = useMemo(() => {
     if (!multiTargetModal || !filteredDataset || filteredDataset.rows.length === 0) return null;
@@ -989,24 +1003,22 @@ export function CrossPlatformAnalysisPage() {
           </div>
         )}
 
-        {/* Results Tables */}
+        {/* Results Table */}
         {multiTargetAnalysis && visibleTargets.length > 0 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6">
-            {visibleTargets.map(target => (
-              <MultiTargetTable 
-                key={target}
-                target={target}
-                data={multiTargetAnalysis[target]}
-                showOnlyPositive={showOnlyPositive}
-                onRemove={() => setTargetVariables(prev => prev.filter(x => x !== target))}
-                onRowClick={(item) => setMultiTargetModal({ target, col: item.col, r: item.rBest, bestLag: item.bestLag })}
-                mode={correlationMode}
-                rollingWindow={rollingWindow}
-                lagMin={lagMin}
-                lagMax={lagMax}
-                labelByColumn={marketingLabelByColumn}
-              />
-            ))}
+          <div>
+            <MultiTargetTable 
+              title={activeOutcomeFilter === "all" ? "All selected outcomes" : `${displayMetricName(visibleTargets[0] || "")} correlations`}
+              data={combinedTargetRows}
+              showOnlyPositive={showOnlyPositive}
+              onRowClick={(item) => setMultiTargetModal({ target: item.target, col: item.col, r: item.rBest, bestLag: item.bestLag })}
+              mode={correlationMode}
+              rollingWindow={rollingWindow}
+              lagMin={lagMin}
+              lagMax={lagMax}
+              showTargetColumn={visibleTargets.length > 1}
+              targetLabelByColumn={outcomeLabelByColumn}
+              labelByColumn={marketingLabelByColumn}
+            />
           </div>
         )}
 
