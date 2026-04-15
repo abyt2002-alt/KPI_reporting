@@ -67,26 +67,6 @@ export function Sidebar() {
 
         <button
           type="button"
-          onClick={() => setActiveTab("campaign_assessment")}
-          className={`w-full rounded-xl border px-3 py-3 text-left transition ${
-            isCampaignAssessment
-              ? "border-cyan-400/50 bg-cyan-500/15 shadow-[0_10px_24px_rgba(6,182,212,0.2)]"
-              : "border-white/10 bg-white/[0.04] hover:border-white/20"
-          }`}
-        >
-          <div className="flex items-start gap-3">
-            <div className={`mt-0.5 rounded-lg p-2 ${isCampaignAssessment ? "bg-cyan-500/25 text-cyan-200" : "bg-white/10 text-slate-200"}`}>
-              <Rocket size={16} />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-white">Campaign Assessment</p>
-              <p className="text-xs text-slate-400">Lift and scenario view</p>
-            </div>
-          </div>
-        </button>
-
-        <button
-          type="button"
           onClick={() => setActiveTab("cross_platform_analysis")}
           className={`w-full rounded-xl border px-3 py-3 text-left transition ${
             isCrossPlatformAnalysis
@@ -101,6 +81,26 @@ export function Sidebar() {
             <div>
               <p className="text-sm font-semibold text-white">Cross Platform Analysis</p>
               <p className="text-xs text-slate-400">Correlation & lag effects</p>
+            </div>
+          </div>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setActiveTab("campaign_assessment")}
+          className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+            isCampaignAssessment
+              ? "border-cyan-400/50 bg-cyan-500/15 shadow-[0_10px_24px_rgba(6,182,212,0.2)]"
+              : "border-white/10 bg-white/[0.04] hover:border-white/20"
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <div className={`mt-0.5 rounded-lg p-2 ${isCampaignAssessment ? "bg-cyan-500/25 text-cyan-200" : "bg-white/10 text-slate-200"}`}>
+              <Rocket size={16} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-white">Campaign Assessment</p>
+              <p className="text-xs text-slate-400">Lift and scenario view</p>
             </div>
           </div>
         </button>
