@@ -25,3 +25,12 @@ After the `ui-changes` branch updates, this branch starts the AI insight RAG sco
 - Prompt now includes retrieved examples as style guidance while forcing facts from live KPI payload only.
 - Backend now returns 3 response variants (`variants`) plus retrieval metadata (`retrieval_examples`, `rag_scope`) alongside the existing fields.
 - Existing UI compatibility is preserved because `headline`, `bullets`, `green_flag`, and `red_flag` are unchanged.
+
+## Final Changes Scope (Pre-Demo)
+
+This section is after the RAG phase, where only 3 seeded examples were used.
+The following updates are for final demo preparation:
+
+- Cross-platform analysis results are shown in one combined table instead of separate cards.
+- Combined rows are globally sorted by highest `Best r`.
+- Outcome context is retained in-table with an `Outcome` column when multiple outcomes are selected.
