@@ -494,5 +494,5 @@ export async function generateAIInsights(params: AIInsightsRequest): Promise<Api
   return fetchApi('/ai/generate-insights', {
     method: 'POST',
     body: JSON.stringify(params),
-  }, 30000);
+  }, 60000);
 }

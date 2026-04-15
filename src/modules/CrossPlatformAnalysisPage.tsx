@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from "react";
-import { TrendingUp, X, Upload, BarChart3 } from "lucide-react";
+import { TrendingUp, X, BarChart3 } from "lucide-react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { useStore } from "../store/useStore";
 import Papa from "papaparse";
@@ -289,6 +289,7 @@ export function CrossPlatformAnalysisPage() {
   const [correlationMode, setCorrelationMode] = useState<"lag" | "rolling">("lag");
   const [rollingWindow, setRollingWindow] = useState(4);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
+  const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
   const [activeOutcomeFilter, setActiveOutcomeFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState("2025-01-01");
   const [endDate, setEndDate] = useState("2025-11-15");
@@ -506,6 +507,14 @@ export function CrossPlatformAnalysisPage() {
       setIsLoadingSample(false);
     }
   };
+
+  // Auto-load sample data when this page opens with no dataset.
+  useEffect(() => {
+    if (!dataset && !isLoadingSample && !hasAttemptedAutoLoad) {
+      setHasAttemptedAutoLoad(true);
+      void loadSampleData();
+    }
+  }, [dataset, isLoadingSample, hasAttemptedAutoLoad]);
   
   // Auto-select default metrics when data loads
   useEffect(() => {
@@ -733,25 +742,22 @@ export function CrossPlatformAnalysisPage() {
               <div className="w-20 h-20 bg-gradient-to-br from-[#FFBD59] to-[#FFD699] rounded-2xl flex items-center justify-center mx-auto mb-6">
                 <TrendingUp size={40} className="text-white" />
               </div>
-              <h3 className="text-[24px] font-bold text-[#333333] mb-3">No Data Available</h3>
-              <p className="text-[15px] text-[#666666] mb-8">Load sample data to get started with cross-platform correlation analysis and discover insights across your marketing channels</p>
-              <button
-                onClick={loadSampleData}
-                disabled={isLoadingSample}
-                className="px-8 py-4 bg-gradient-to-r from-[#FFBD59] to-[#FFD699] text-[#333333] rounded-xl hover:shadow-lg transition font-semibold inline-flex items-center gap-3 disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isLoadingSample ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-[#333333] border-t-transparent rounded-full animate-spin" />
-                    Loading Sample Data...
-                  </>
-                ) : (
-                  <>
-                    <Upload size={20} />
-                    Load Sample Data
-                  </>
-                )}
-              </button>
+              <h3 className="text-[24px] font-bold text-[#333333] mb-3">
+                {isLoadingSample ? "Loading Cross-Platform Data" : "Unable to Load Data"}
+              </h3>
+              <p className="text-[15px] text-[#666666] mb-8">
+                {isLoadingSample
+                  ? "Preparing sample data for cross-platform correlation analysis."
+                  : "Automatic sample load failed. Please retry."}
+              </p>
+              {!isLoadingSample && (
+                <button
+                  onClick={loadSampleData}
+                  className="px-8 py-4 bg-gradient-to-r from-[#FFBD59] to-[#FFD699] text-[#333333] rounded-xl hover:shadow-lg transition font-semibold inline-flex items-center gap-3"
+                >
+                  Retry loading data
+                </button>
+              )}
             </div>
           </div>
         </div>
