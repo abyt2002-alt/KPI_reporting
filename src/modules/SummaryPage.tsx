@@ -127,21 +127,17 @@ interface SummaryView {
 
 const TIME_RANGE_DAYS: Partial<Record<SummaryTimeRange, number>> = {
   last_7: 7,
-  last_13: 13,
   last_30: 30,
   last_90: 90,
-  last_180: 180,
-  last_365: 365,
 };
 
 const SUMMARY_TIME_OPTIONS: Array<{ value: SummaryTimeRange; label: string }> = [
-  { value: "yesterday", label: "Yesterday" },
+  { value: "today", label: "Today" },
   { value: "last_7", label: "Last 7 days" },
-  { value: "last_13", label: "Last 13 days" },
   { value: "last_30", label: "Last 30 days" },
   { value: "last_90", label: "Last 90 days" },
-  { value: "last_180", label: "Last 180 days" },
-  { value: "last_365", label: "Last 365 days" },
+  { value: "ytd", label: "Year to date" },
+  { value: "last_year", label: "Last year" },
   { value: "custom", label: "Custom range" },
 ];
 
@@ -168,13 +164,13 @@ const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string 
 
 const METRIC_DEFINITIONS: MetricDefinition[] = [
   { key: "revenue", label: "Revenue", subtitle: "Total sales", kind: "currency", icon: DollarSign, accent: "#0ea5e9" },
-  { key: "orders", label: "Orders", subtitle: "Placed orders", kind: "integer", icon: ShoppingCart, accent: "#22c55e" },
-  { key: "media_spend", label: "Meta Spend", subtitle: "Meta ad spend", kind: "currency", icon: Megaphone, accent: "#f59e0b" },
-  { key: "google_spend", label: "Google Spend", subtitle: "Google channel spend", kind: "currency", icon: Search, accent: "#3b82f6" },
+  { key: "orders", label: "Orders", subtitle: "Total quantity ordered", kind: "integer", icon: ShoppingCart, accent: "#22c55e" },
   { key: "aov", label: "AOV", subtitle: "Average order value", kind: "currency", icon: Wallet, accent: "#8b5cf6" },
-  { key: "new_customers_pct", label: "New Customers %", subtitle: "New customer share", kind: "percent", icon: Users, accent: "#10b981" },
-  { key: "meta_roas", label: "Meta ROAS", subtitle: "Meta return on ad spend", kind: "ratio", icon: Target, accent: "#14b8a6" },
-  { key: "google_roas", label: "Google ROAS", subtitle: "Google return on ad spend", kind: "ratio", icon: BarChart3, accent: "#06b6d4" },
+  { key: "new_customers_pct", label: "New Customers %", subtitle: "Share of new customers", kind: "percent", icon: Users, accent: "#10b981" },
+  { key: "media_spend", label: "Meta Spend", subtitle: "Ad spends on Meta", kind: "currency", icon: Megaphone, accent: "#f59e0b" },
+  { key: "google_spend", label: "Google Spend", subtitle: "Ad spends on Google", kind: "currency", icon: Search, accent: "#3b82f6" },
+  { key: "meta_roas", label: "Meta ROAS", subtitle: "Return on ad spend", kind: "ratio", icon: Target, accent: "#14b8a6" },
+  { key: "google_roas", label: "Google ROAS", subtitle: "Return on ad spend", kind: "ratio", icon: BarChart3, accent: "#06b6d4" },
 ];
 
 const MARKET_SCALE: Record<Market, number> = {
@@ -204,13 +200,12 @@ const DETAIL_TAB_LABELS: Array<{ key: DetailTab; label: string }> = [
 ];
 
 const SUMMARY_TIME_LABELS: Record<SummaryTimeRange, string> = {
-  yesterday: "Yesterday",
+  today: "Today",
   last_7: "Last 7 days",
-  last_13: "Last 13 days",
   last_30: "Last 30 days",
   last_90: "Last 90 days",
-  last_180: "Last 180 days",
-  last_365: "Last 365 days",
+  ytd: "Year to date",
+  last_year: "Last year",
   custom: "Custom range",
 };
 
@@ -533,9 +528,28 @@ const getSelectedDatesForSelection = (allDates: string[], selection: SummarySele
     return allDates.filter((date) => date >= boundedStart && date <= end);
   }
 
-  if (selection.timeRange === "yesterday") {
-    if (allDates.length === 1) return [allDates[0]];
-    return [allDates[allDates.length - 2]];
+  if (selection.timeRange === "today") {
+    return [allDates[allDates.length - 1]];
+  }
+
+  if (selection.timeRange === "ytd") {
+    const latestDate = allDates[allDates.length - 1];
+    const latestYear = Number(latestDate.slice(0, 4));
+    const yearStart = `${latestYear}-01-01`;
+    return allDates.filter((date) => date >= yearStart && date <= latestDate);
+  }
+
+  if (selection.timeRange === "last_year") {
+    const latestDate = allDates[allDates.length - 1];
+    const latestYear = Number(latestDate.slice(0, 4));
+    const previousYear = latestYear - 1;
+    const yearStart = `${previousYear}-01-01`;
+    const yearEnd = `${previousYear}-12-31`;
+    const previousYearDates = allDates.filter((date) => date >= yearStart && date <= yearEnd);
+
+    // Fallback so the page never appears empty if previous-year data is unavailable.
+    if (previousYearDates.length > 0) return previousYearDates;
+    return allDates.slice(0, Math.min(365, allDates.length));
   }
 
   const dayCount = TIME_RANGE_DAYS[selection.timeRange] ?? 30;
@@ -615,10 +629,10 @@ function MetricCardGrid({
                   <>
                     {trend >= 0 ? <TrendingUp size={14} className="text-emerald-600" /> : <TrendingDown size={14} className="text-red-500" />}
                     <span className={trend >= 0 ? "text-emerald-600" : "text-red-500"}>{Math.abs(trend).toFixed(1)}%</span>
-                    <span className="text-slate-500">vs previous range</span>
+                    <span className="text-slate-500">vs previous period</span>
                   </>
                 ) : (
-                  <span className="text-slate-500">No previous range available</span>
+                  <span className="text-slate-500">No previous period available</span>
                 )}
               </div>
             </div>
@@ -1328,7 +1342,7 @@ export function SummaryPage() {
                   {isAiSummaryLoading
                     ? isCompareMode
                       ? "Comparing the KPI views"
-                      : "Reading the KPI movement"
+                      : "Generating..."
                     : isAiSummaryStale
                       ? isCompareMode
                         ? "Comparison changed, regenerate insights"
@@ -1408,7 +1422,7 @@ export function SummaryPage() {
                 <div className="space-y-4">
                   {/* Green Flag */}
                   <div className="rounded-3xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50 to-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Green Flag</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Bright spots</p>
                     <div className="text-sm leading-6 text-slate-700">
                       {aiSummary.actions[0]}
                     </div>
@@ -1416,7 +1430,7 @@ export function SummaryPage() {
 
                   {/* Red Flag */}
                   <div className="rounded-3xl border border-amber-200/80 bg-gradient-to-br from-amber-50 to-white p-5 shadow-[0_16px_40px_rgba(15,23,42,0.07)]">
-                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Watchout</p>
+                    <p className="mb-2 text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Watchouts</p>
                     <div className="text-sm leading-6 text-slate-700">
                       {aiSummary.watchout}
                     </div>
@@ -1683,15 +1697,15 @@ export function SummaryPage() {
                       <Tooltip formatter={(v) => formatCurrencyCompact(Number(v))} />
                       {marketingChannel === 'blended' && (
                         <>
-                          <Line type="monotone" dataKey="media_spend" name="Total ad spend" stroke="#0f172a" strokeWidth={2.5} dot={false} />
-                          <Line type="monotone" dataKey="google_spend" name="Google CPC" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} />
+                          <Line type="monotone" dataKey="media_spend" name="Ads composition" stroke="#0f172a" strokeWidth={2.5} dot={false} />
+                          <Line type="monotone" dataKey="google_spend" name="Google Ads" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} />
                         </>
                       )}
                       {marketingChannel === 'meta' && (
                         <Line type="monotone" dataKey="media_spend" name="Meta Ads" stroke="#ef4444" strokeWidth={2.5} dot={false} />
                       )}
                       {marketingChannel === 'google' && (
-                        <Line type="monotone" dataKey="google_spend" name="Google CPC" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+                        <Line type="monotone" dataKey="google_spend" name="Google Ads" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
                       )}
                     </LineChart>
                   </ResponsiveContainer>
@@ -1701,11 +1715,11 @@ export function SummaryPage() {
                     <>
                       <div className="flex items-center gap-1.5">
                         <div className="h-2.5 w-2.5 rounded-full bg-slate-900" />
-                        <span className="text-slate-600">Total ad spend</span>
+                        <span className="text-slate-600">Ads composition</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="h-2.5 w-2.5 rounded-full bg-slate-400" />
-                        <span className="text-slate-600">Google CPC</span>
+                        <span className="text-slate-600">Google Ads</span>
                       </div>
                     </>
                   )}
@@ -1718,7 +1732,7 @@ export function SummaryPage() {
                   {marketingChannel === 'google' && (
                     <div className="flex items-center gap-1.5">
                       <div className="h-2.5 w-2.5 rounded-full bg-blue-500" />
-                      <span className="text-slate-600">Google CPC</span>
+                      <span className="text-slate-600">Google Ads</span>
                     </div>
                   )}
                 </div>
@@ -1745,7 +1759,7 @@ export function SummaryPage() {
                   <div className="flex items-center justify-between text-xs">
                     <div className="flex items-center gap-2">
                       <div className="h-3 w-3 rounded-full bg-blue-500" />
-                      <span className="text-slate-600">Google CPC</span>
+                      <span className="text-slate-600">Google Ads</span>
                     </div>
                     <span className="font-semibold text-slate-900">75%</span>
                   </div>
@@ -1787,32 +1801,28 @@ export function SummaryPage() {
               </div>
               <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">ROAS</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">ROAS</p>
                   <p className="mt-1 text-2xl font-bold text-slate-900">
                     {marketingChannel === 'meta' ? '2.42x' : marketingChannel === 'google' ? '3.18x' : '2.80x'}
                   </p>
-                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPA</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CPA</p>
                   <p className="mt-1 text-2xl font-bold text-slate-900">
                     {marketingChannel === 'meta' ? '$16.80' : marketingChannel === 'google' ? '$12.40' : '$14.60'}
                   </p>
-                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CTR</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CTR</p>
                   <p className="mt-1 text-2xl font-bold text-slate-900">
                     {marketingChannel === 'meta' ? '3.18%' : marketingChannel === 'google' ? '1.94%' : '2.56%'}
                   </p>
-                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">CPC</p>
+                  <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">CPC</p>
                   <p className="mt-1 text-2xl font-bold text-slate-900">
                     {marketingChannel === 'meta' ? '$0.94' : marketingChannel === 'google' ? '$1.32' : '$1.13'}
                   </p>
-                  <p className="text-[10px] text-slate-500">{marketingChannel === 'blended' ? 'Avg' : ''}</p>
                 </div>
               </div>
             </div>
@@ -1876,7 +1886,8 @@ export function SummaryPage() {
                     
                     const data = marketingChannel === 'meta' ? metaData : marketingChannel === 'google' ? googleData : blendedData;
                     
-                    return data.map((item) => (
+                    return data.map((item) => {
+                      return (
                       <div key={item.stage}>
                         <div className="mb-1.5 flex items-center justify-between text-xs">
                           <span className="font-medium text-slate-700">{item.stage}</span>
@@ -1886,10 +1897,14 @@ export function SummaryPage() {
                           </div>
                         </div>
                         <div className="h-2 rounded-full bg-slate-100">
-                          <div className={`h-2 rounded-full bg-rose-${600 - item.pct}`} style={{ width: `${item.pct}%` }} />
+                          <div
+                            className="h-2 rounded-full"
+                            style={{ width: `${item.pct}%`, backgroundColor: "#FFBD59" }}
+                          />
                         </div>
                       </div>
-                    ));
+                      );
+                    });
                   })()}
                 </div>
               </div>

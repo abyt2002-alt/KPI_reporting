@@ -3,14 +3,16 @@ import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContai
 import { runPrediction } from "../services/api";
 import { FY25_DEFAULT_CUSTOM_END, FY25_DEFAULT_CUSTOM_START, FY25_END_DATE, FY25_START_DATE } from "./summaryConfig";
 
-type Market = "US" | "UK";
-type CampaignType = "youtube" | "google_pmax";
+type Market = "US" | "UK" | "IN" | "ME";
+type CampaignType = "youtube" | "google_pmax" | "meta";
 
-const MARKET_OPTIONS: Market[] = ["US", "UK"];
+const MARKET_OPTIONS: Market[] = ["US", "UK", "IN", "ME"];
 
 const DMA_OPTIONS: Record<Market, string[]> = {
   US: ["New York", "Chicago", "Boston", "Los Angeles", "San Francisco", "San Diego", "Dallas", "Houston"],
   UK: ["London", "Manchester", "Birmingham", "Glasgow", "Edinburgh", "Leeds", "Liverpool", "Bristol"],
+  IN: ["Mumbai", "Delhi", "Bangalore", "Hyderabad", "Chennai", "Pune"],
+  ME: ["Dubai", "Riyadh", "Abu Dhabi"],
 };
 
 interface CampaignOption {
@@ -21,71 +23,69 @@ interface CampaignOption {
   similarDmaGroups: Record<string, string[]>;
 }
 
+const STAGE_KEYS = ["prospecting", "awareness", "retargeting", "conversion"] as const;
+
+const REGION_LABEL: Record<Market, string> = {
+  US: "US",
+  UK: "UK",
+  IN: "India",
+  ME: "Middle East",
+};
+
+const PLATFORM_LABEL: Record<CampaignType, string> = {
+  youtube: "YouTube",
+  google_pmax: "Google PMax",
+  meta: "Meta",
+};
+
+const PLATFORM_ID_PREFIX: Record<CampaignType, string> = {
+  youtube: "youtube",
+  google_pmax: "pmax",
+  meta: "meta",
+};
+
+const makeSimilarGroups = (activeDmas: string[], dmaPool: string[]) =>
+  Object.fromEntries(
+    activeDmas.map((dma) => {
+      const peers = dmaPool.filter((candidate) => candidate !== dma).slice(0, 2);
+      return [dma, peers];
+    })
+  );
+
+const pickActiveDmas = (dmaPool: string[], startIndex: number) => {
+  if (dmaPool.length === 0) return [];
+  if (dmaPool.length === 1) return [dmaPool[0]];
+  const first = dmaPool[startIndex % dmaPool.length];
+  const second = dmaPool[(startIndex + 1) % dmaPool.length];
+  return first === second ? [first] : [first, second];
+};
+
+const buildMarketCampaigns = (market: Market): CampaignOption[] => {
+  const lower = market.toLowerCase();
+  const dmaPool = DMA_OPTIONS[market];
+  const platforms: CampaignType[] = ["youtube", "google_pmax", "meta"];
+
+  return platforms.flatMap((platform, platformIndex) =>
+    STAGE_KEYS.map((stage, stageIndex) => {
+      const id = `${lower}_${PLATFORM_ID_PREFIX[platform]}_${stage}`;
+      const name = `${REGION_LABEL[market]} ${PLATFORM_LABEL[platform]} ${stage[0].toUpperCase()}${stage.slice(1)}`;
+      const activeDmas = pickActiveDmas(dmaPool, platformIndex + stageIndex);
+      return {
+        id,
+        name,
+        platform,
+        activeDmas,
+        similarDmaGroups: makeSimilarGroups(activeDmas, dmaPool),
+      };
+    })
+  );
+};
+
 const CAMPAIGN_LIBRARY: Record<Market, CampaignOption[]> = {
-  US: [
-    {
-      id: "us_yt_reach",
-      name: "US YouTube Reach",
-      platform: "youtube",
-      activeDmas: ["New York", "Chicago"],
-      similarDmaGroups: {
-        "New York": ["Chicago", "Boston"],
-        Chicago: ["New York", "Boston"],
-      },
-    },
-    {
-      id: "us_yt_creators",
-      name: "Creator Prospecting",
-      platform: "youtube",
-      activeDmas: ["Los Angeles", "San Francisco"],
-      similarDmaGroups: {
-        "Los Angeles": ["San Francisco", "San Diego"],
-        "San Francisco": ["Los Angeles", "San Diego"],
-      },
-    },
-    {
-      id: "us_pmax_scale",
-      name: "PMax Scale Up",
-      platform: "google_pmax",
-      activeDmas: ["Dallas", "Houston"],
-      similarDmaGroups: {
-        Dallas: ["Houston", "Chicago"],
-        Houston: ["Dallas", "Chicago"],
-      },
-    },
-  ],
-  UK: [
-    {
-      id: "uk_yt_awareness",
-      name: "UK YouTube Awareness",
-      platform: "youtube",
-      activeDmas: ["London", "Manchester"],
-      similarDmaGroups: {
-        London: ["Manchester", "Birmingham"],
-        Manchester: ["London", "Birmingham"],
-      },
-    },
-    {
-      id: "uk_pmax_core",
-      name: "PMax Core",
-      platform: "google_pmax",
-      activeDmas: ["London", "Manchester"],
-      similarDmaGroups: {
-        London: ["Manchester", "Birmingham"],
-        Manchester: ["London", "Birmingham"],
-      },
-    },
-    {
-      id: "uk_pmax_gifting",
-      name: "PMax Gifting Push",
-      platform: "google_pmax",
-      activeDmas: ["Glasgow", "Edinburgh"],
-      similarDmaGroups: {
-        Glasgow: ["Edinburgh", "Leeds"],
-        Edinburgh: ["Glasgow", "Leeds"],
-      },
-    },
-  ],
+  US: buildMarketCampaigns("US"),
+  UK: buildMarketCampaigns("UK"),
+  IN: buildMarketCampaigns("IN"),
+  ME: buildMarketCampaigns("ME"),
 };
 
 interface AnalysisConfig {
@@ -249,8 +249,10 @@ const formatCurrencyCompact = (value: number) => {
   return `$${value.toFixed(0)}`;
 };
 
-const getCampaignLabel = (campaign: CampaignType) => (campaign === "youtube" ? "YouTube" : "Google Performance Max");
-const getMetaScenarioLabel = (campaign: CampaignType) => (campaign === "youtube" ? "Advantage+ Meta Campaign" : "Meta continuation");
+const getCampaignLabel = (campaign: CampaignType) =>
+  campaign === "youtube" ? "YouTube" : campaign === "google_pmax" ? "Google Performance Max" : "Meta Ads";
+const getMetaScenarioLabel = (campaign: CampaignType) =>
+  campaign === "youtube" ? "Advantage+ Meta Campaign" : campaign === "google_pmax" ? "Meta continuation" : "Meta continuation";
 
 const getIsoDatesBetween = (startIso: string, endIso: string) => {
   const output: string[] = [];
@@ -268,7 +270,7 @@ const getIsoDatesBetween = (startIso: string, endIso: string) => {
 const generateMockRows = (): DailyMarketRow[] => {
   const rows: DailyMarketRow[] = [];
   const allDates = getIsoDatesBetween(FY25_START_DATE, FY25_END_DATE);
-  const marketScale: Record<Market, number> = { US: 1.42, UK: 1 };
+  const marketScale: Record<Market, number> = { US: 1.42, UK: 1, IN: 1.1, ME: 0.85 };
 
   allDates.forEach((isoDate, dayIndex) => {
     const currentDate = new Date(`${isoDate}T00:00:00`);
@@ -340,9 +342,9 @@ const buildCampaignTimelineRows = (
       const isCampaign = campaignEnabled && row.date >= campaignStartDate && row.date <= campaignEndDate;
       const marketLift = market === "US" ? 1.15 : 0.92;
       const dmaLift = 0.88 + (DMA_OPTIONS[market].indexOf(dma) + 1) * 0.09;
-      const campaignSpendBase = campaignType === "youtube" ? 1 : 1.18;
-      const campaignRoasBase = campaignType === "youtube" ? 1.65 : 1.92;
-      const metaOverlapBase = campaignType === "youtube" ? 0.94 : 0.985;
+      const campaignSpendBase = campaignType === "youtube" ? 1 : campaignType === "google_pmax" ? 1.18 : 0.92;
+      const campaignRoasBase = campaignType === "youtube" ? 1.65 : campaignType === "google_pmax" ? 1.92 : 1.58;
+      const metaOverlapBase = campaignType === "youtube" ? 0.94 : campaignType === "google_pmax" ? 0.985 : 1.02;
       const campaignSpend = isCampaign
         ? roundCurrency((210 + seededNoise(index * 41 + marketRows.length) * 190 + (index % 5) * 18) * marketLift * dmaLift * campaignSpendBase)
         : 0;
@@ -520,6 +522,22 @@ export function CampaignAssessmentPage() {
         standardization: "standardize",
       });
 
+      const ordersModelResult = await runPrediction({
+        data: baselineRows.map((row) => ({
+          google_spend: row.google_spend,
+          meta_spend: row.meta_spend,
+          weekend_flag: row.weekend_flag,
+          trend_index: row.trend_index,
+          seasonality_sin: row.seasonality_sin,
+          seasonality_cos: row.seasonality_cos,
+          actual_orders: row.actual_orders,
+        })),
+        target_column: "actual_orders",
+        feature_columns: CAMPAIGN_FEATURE_COLUMNS,
+        model_type: "ridge",
+        standardization: "standardize",
+      });
+
       if (cancelled) return;
 
       if (modelResult.error || !modelResult.data?.coefficients) {
@@ -531,25 +549,38 @@ export function CampaignAssessmentPage() {
 
       const coefficients = modelResult.data.coefficients;
       
-      // Include baseline data for the chart (last 4 weeks before campaign)
+      // Include baseline data for the chart (last 4 weeks before campaign), displayed as volume.
+      const orderCoefficients = ordersModelResult.data?.coefficients;
+      const averageBaselineAov = safeDivide(
+        baselineRows.reduce((sum, row) => sum + row.actual_revenue, 0),
+        Math.max(1, baselineRows.reduce((sum, row) => sum + row.actual_orders, 0))
+      );
+      const scorePredictedOrders = (row: CampaignAssessmentRow) => {
+        if (orderCoefficients) return Math.max(0, scoreWithCoefficients(row, orderCoefficients));
+        const revenuePredicted = Math.max(0, scoreWithCoefficients(row, coefficients));
+        return safeDivide(revenuePredicted, Math.max(averageBaselineAov, 1));
+      };
+
       const baselineChartRows = baselineRows.slice(-28).map((row) => {
-        const predicted = scoreWithCoefficients(row, coefficients);
+        const predictedOrders = scorePredictedOrders(row);
         return {
           label: row.label,
           date: row.date,
-          actual: row.actual_revenue,
-          predicted: roundCurrency(predicted),
+          actual: row.actual_orders,
+          predicted: Math.round(predictedOrders),
           isCampaign: false,
         };
       });
       
       const campaignChartRows = campaignRows.map((row) => {
-        const predicted = scoreWithCoefficients(row, coefficients);
+        const predictedRevenue = scoreWithCoefficients(row, coefficients);
+        const predictedOrders = scorePredictedOrders(row);
         return {
           label: row.label,
           date: row.date,
-          actual: row.actual_revenue,
-          predicted: roundCurrency(predicted),
+          actual: row.actual_orders,
+          predicted: Math.round(predictedOrders),
+          predictedRevenue: roundCurrency(predictedRevenue),
           isCampaign: true,
         };
       });
@@ -562,8 +593,8 @@ export function CampaignAssessmentPage() {
       const metaSpend = roundCurrency(campaignRows.reduce((sum, row) => sum + row.meta_spend, 0));
       const campaignRevenue = roundCurrency(campaignRows.reduce((sum, row) => sum + row.campaign_revenue, 0));
       const metaRevenue = roundCurrency(campaignRows.reduce((sum, row) => sum + row.meta_revenue, 0));
-      const actualRevenue = roundCurrency(campaignChartRows.reduce((sum, row) => sum + row.actual, 0));
-      const predictedRevenue = roundCurrency(campaignChartRows.reduce((sum, row) => sum + row.predicted, 0));
+      const actualRevenue = roundCurrency(campaignRows.reduce((sum, row) => sum + row.actual_revenue, 0));
+      const predictedRevenue = roundCurrency(campaignChartRows.reduce((sum, row) => sum + row.predictedRevenue, 0));
       const incrementalRevenue = roundCurrency(actualRevenue - predictedRevenue);
       const actualOrders = Math.round(campaignRows.reduce((sum, row) => sum + row.actual_orders, 0));
       const previousOrders = Math.round(baselineRows.slice(-campaignRows.length).reduce((sum, row) => sum + row.actual_orders, 0));
@@ -788,17 +819,12 @@ export function CampaignAssessmentPage() {
         <section className="rounded-[28px] border border-slate-200 bg-white/90 p-5 shadow-[0_18px_55px_rgba(15,23,42,0.08)]">
           <div>
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div>
-                <div className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-slate-700">
-                  Campaign Performance Assessment
-                </div>
-                <h3 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">Estimate the lift of a campaign launch.</h3>
-              </div>
+              <div />
             </div>
 
             {!analysisConfig || isSetupExpanded ? (
               <div className="mt-5 rounded-[26px] border border-slate-200 bg-[linear-gradient(180deg,#f8fafc_0%,#ffffff_100%)] p-4">
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <label className="text-xs font-semibold text-slate-500">
                     Region
                     <select
@@ -842,21 +868,7 @@ export function CampaignAssessmentPage() {
                     </select>
                   </label>
                   <label className="text-xs font-semibold text-slate-500">
-                    DMA
-                    <select
-                      value={assessmentDma}
-                      onChange={(event) => setAssessmentDma(event.target.value)}
-                      className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
-                    >
-                      {availableDmas.map((dma) => (
-                        <option key={dma} value={dma}>
-                          {dma}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="text-xs font-semibold text-slate-500">
-                    Campaign start (Monday)
+                    Start date
                     <input 
                       type="date" 
                       min={FY25_START_DATE} 
@@ -872,7 +884,7 @@ export function CampaignAssessmentPage() {
                     />
                   </label>
                   <label className="text-xs font-semibold text-slate-500">
-                    Campaign end (Sunday)
+                    End date
                     <input 
                       type="date" 
                       min={assessmentStartDate} 
@@ -893,9 +905,7 @@ export function CampaignAssessmentPage() {
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                  <p className="text-sm text-slate-500">
-                    {availableDmas.length} active DMAs for {selectedCampaignOption?.name ?? "this campaign"}
-                  </p>
+                  <div />
                   <div className="flex items-center gap-3">
                     {analysisConfig ? (
                       <button
@@ -923,7 +933,6 @@ export function CampaignAssessmentPage() {
                   <div className="flex flex-wrap gap-2">
                     {[
                       activeMarket,
-                      activeDma,
                       selectedPlatformLabel,
                       selectedCampaignName,
                       `${activeStartDate} to ${activeEndDate}`,
@@ -950,49 +959,61 @@ export function CampaignAssessmentPage() {
             {!isCampaignAssessmentLoading && !campaignAssessmentError && campaignAssessment ? (
               <div className="mt-5 lg:sticky lg:top-4 lg:z-20 lg:-mx-2 lg:rounded-[26px] lg:bg-white/95 lg:px-2 lg:py-2 lg:shadow-[0_18px_45px_rgba(15,23,42,0.10)] lg:backdrop-blur">
                 <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
-                <div className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+                <div className="h-full rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] flex flex-col">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Actual Volume</p>
-                  <p className="mt-1 text-xs text-slate-500">Orders during campaign</p>
-                  <p className="mt-3 text-3xl font-semibold text-slate-950">{campaignAssessment.actualOrders.toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-slate-500">In the selected period</p>
+                  <div className="mt-auto min-h-[2.5rem] flex items-end">
+                    <p className="text-3xl font-semibold leading-none tabular-nums text-slate-950">{campaignAssessment.actualOrders.toLocaleString()}</p>
+                  </div>
                 </div>
-                <div className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+                <div className="h-full rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] flex flex-col">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Counterfactual Volume</p>
-                  <p className="mt-1 text-xs text-slate-500">Without {selectedPlatformLabel}</p>
-                  <p className="mt-3 text-3xl font-semibold text-slate-950">{campaignAssessment.previousOrders.toLocaleString()}</p>
+                  <p className="mt-1 text-xs text-slate-500">Removing the campaign effect</p>
+                  <div className="mt-auto min-h-[2.5rem] flex items-end">
+                    <p className="text-3xl font-semibold leading-none tabular-nums text-slate-950">{campaignAssessment.previousOrders.toLocaleString()}</p>
+                  </div>
                 </div>
-                <div className="rounded-[24px] border border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4 shadow-[0_12px_30px_rgba(147,51,234,0.10)]">
+                <div className="h-full rounded-[24px] border border-purple-200 bg-gradient-to-br from-purple-50 to-white p-4 shadow-[0_12px_30px_rgba(147,51,234,0.10)] flex flex-col">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-purple-700">Volume Change</p>
                   <p className="mt-1 text-xs text-purple-700/75">Impact of campaign</p>
-                  <p className="mt-3 text-3xl font-semibold text-purple-800">
-                    {campaignAssessment.previousOrders > 0 ? (
-                      <>
-                        {((campaignAssessment.actualOrders - campaignAssessment.previousOrders) / campaignAssessment.previousOrders * 100) > 0 ? '+' : ''}
-                        {Math.round(((campaignAssessment.actualOrders - campaignAssessment.previousOrders) / campaignAssessment.previousOrders) * 100)}%
-                      </>
-                    ) : 'N/A'}
-                  </p>
+                  <div className="mt-auto min-h-[2.5rem] flex items-end">
+                    <p className="text-3xl font-semibold leading-none tabular-nums text-purple-800">
+                      {campaignAssessment.previousOrders > 0 ? (
+                        <>
+                          {((campaignAssessment.actualOrders - campaignAssessment.previousOrders) / campaignAssessment.previousOrders * 100) > 0 ? '+' : ''}
+                          {Math.round(((campaignAssessment.actualOrders - campaignAssessment.previousOrders) / campaignAssessment.previousOrders) * 100)}%
+                        </>
+                      ) : 'N/A'}
+                    </p>
+                  </div>
                 </div>
-                <div className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+                <div className="h-full rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] flex flex-col">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Actual Revenue</p>
-                  <p className="mt-1 text-xs text-slate-500">Revenue during campaign</p>
-                  <p className="mt-3 text-3xl font-semibold text-slate-950">{formatCurrencyCompact(campaignAssessment.actualRevenue)}</p>
+                  <p className="mt-1 text-xs text-slate-500">In the selected period</p>
+                  <div className="mt-auto min-h-[2.5rem] flex items-end">
+                    <p className="text-3xl font-semibold leading-none tabular-nums text-slate-950">{formatCurrencyCompact(campaignAssessment.actualRevenue)}</p>
+                  </div>
                 </div>
-                <div className="rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)]">
+                <div className="h-full rounded-[24px] border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 shadow-[0_12px_30px_rgba(15,23,42,0.06)] flex flex-col">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-slate-500">Counterfactual Revenue</p>
-                  <p className="mt-1 text-xs text-slate-500">Without {selectedPlatformLabel}</p>
-                  <p className="mt-3 text-3xl font-semibold text-slate-950">{formatCurrencyCompact(campaignAssessment.predictedWithoutCampaignRevenue)}</p>
+                  <p className="mt-1 text-xs text-slate-500">Removing the campaign effect</p>
+                  <div className="mt-auto min-h-[2.5rem] flex items-end">
+                    <p className="text-3xl font-semibold leading-none tabular-nums text-slate-950">{formatCurrencyCompact(campaignAssessment.predictedWithoutCampaignRevenue)}</p>
+                  </div>
                 </div>
-                <div className="rounded-[24px] border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-[0_12px_30px_rgba(16,185,129,0.10)]">
+                <div className="h-full rounded-[24px] border border-emerald-200 bg-gradient-to-br from-emerald-50 to-white p-4 shadow-[0_12px_30px_rgba(16,185,129,0.10)] flex flex-col">
                   <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-emerald-700">Revenue Change</p>
                   <p className="mt-1 text-xs text-emerald-700/75">Impact of campaign</p>
-                  <p className="mt-3 text-3xl font-semibold text-emerald-800">
-                    {campaignAssessment.predictedWithoutCampaignRevenue > 0 ? (
-                      <>
-                        {((campaignAssessment.incrementalRevenue / campaignAssessment.predictedWithoutCampaignRevenue) * 100) > 0 ? '+' : ''}
-                        {Math.round((campaignAssessment.incrementalRevenue / campaignAssessment.predictedWithoutCampaignRevenue) * 100)}%
-                      </>
-                    ) : 'N/A'}
-                  </p>
+                  <div className="mt-auto min-h-[2.5rem] flex items-end">
+                    <p className="text-3xl font-semibold leading-none tabular-nums text-emerald-800">
+                      {campaignAssessment.predictedWithoutCampaignRevenue > 0 ? (
+                        <>
+                          {((campaignAssessment.incrementalRevenue / campaignAssessment.predictedWithoutCampaignRevenue) * 100) > 0 ? '+' : ''}
+                          {Math.round((campaignAssessment.incrementalRevenue / campaignAssessment.predictedWithoutCampaignRevenue) * 100)}%
+                        </>
+                      ) : 'N/A'}
+                    </p>
+                  </div>
                 </div>
                 </div>
               </div>
@@ -1007,7 +1028,7 @@ export function CampaignAssessmentPage() {
                     <div>
                       <p className="text-base font-bold text-slate-900">Campaign Period Comparison</p>
                       <p className="mt-1 text-xs text-slate-600">
-                        {activeMarket} / {activeDma} / {selectedCampaignName}: Weekly actual vs predicted baseline
+                        {activeMarket} / {activeDma} / {selectedCampaignName}: Weekly actual vs predicted volume
                       </p>
                     </div>
                     <div className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-right text-xs text-slate-600 shadow-sm">
@@ -1029,7 +1050,7 @@ export function CampaignAssessmentPage() {
                           tick={{ fill: "#64748b", fontSize: 12, fontWeight: 500 }} 
                           width={85}
                           stroke="#cbd5e1"
-                          tickFormatter={(value) => formatCurrencyCompact(value)}
+                          tickFormatter={(value) => Math.round(value).toLocaleString("en-US")}
                         />
                         <Legend 
                           verticalAlign="top" 
@@ -1039,7 +1060,7 @@ export function CampaignAssessmentPage() {
                           iconSize={20}
                         />
                         <Tooltip 
-                          formatter={(value) => value ? formatCurrencyCompact(Number(value)) : 'N/A'} 
+                          formatter={(value) => value ? Number(value).toLocaleString("en-US") : 'N/A'} 
                           labelStyle={{ fontWeight: 700, color: "#0f172a", fontSize: "13px" }} 
                           contentStyle={{ 
                             borderRadius: 12, 
@@ -1067,7 +1088,7 @@ export function CampaignAssessmentPage() {
                         <Line 
                           type="monotone" 
                           dataKey="actual" 
-                          name="Actual Revenue" 
+                          name="Actual Volume" 
                           stroke="#0ea5e9" 
                           strokeWidth={3.5} 
                           dot={false} 
@@ -1077,7 +1098,7 @@ export function CampaignAssessmentPage() {
                         <Line 
                           type="monotone" 
                           dataKey="predicted" 
-                          name="Predicted Baseline" 
+                          name="Counterfactual Volume" 
                           stroke="#64748b" 
                           strokeWidth={2.8} 
                           dot={false} 
@@ -1094,16 +1115,12 @@ export function CampaignAssessmentPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="text-sm font-semibold text-slate-900">Platform Effectiveness</p>
-                      <p className="mt-1 text-xs text-slate-500">{activeDma}</p>
                     </div>
-                    <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-500">
-                      Campaign period
-                    </span>
                   </div>
 
                   <div className="mt-4 space-y-3">
                     <div className="rounded-2xl border border-blue-200 bg-gradient-to-br from-blue-50 to-white p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">Meta Effectiveness</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-blue-700">Meta Ads Effectiveness</p>
                       <p className="mt-1 text-xs text-blue-600">Change during campaign</p>
                       <p className={`mt-3 text-4xl font-semibold ${campaignAssessment.metaEffectivenessChange >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
                         {campaignAssessment.metaEffectivenessChange > 0 ? '+' : ''}
@@ -1112,18 +1129,10 @@ export function CampaignAssessmentPage() {
                     </div>
 
                     <div className="rounded-2xl border border-slate-200 bg-gradient-to-br from-slate-50 to-white p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">Google Brand Traffic</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-600">Google Ads Effectiveness</p>
                       <p className="mt-1 text-xs text-slate-500">Change during campaign</p>
                       <p className="mt-3 text-4xl font-semibold text-emerald-700">
                         +{Math.round(Math.random() * 8 + 2)}%
-                      </p>
-                    </div>
-
-                    <div className="rounded-2xl border border-cyan-200 bg-gradient-to-br from-cyan-50 to-white p-4">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-cyan-700">{selectedPlatformLabel}</p>
-                      <p className="mt-1 text-xs text-cyan-600">Introduced in this period</p>
-                      <p className="mt-3 text-2xl font-semibold text-cyan-800">
-                        New Campaign
                       </p>
                     </div>
                   </div>

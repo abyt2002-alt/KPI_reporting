@@ -200,7 +200,7 @@ export interface User {
 }
 
 export type Theme = 'light' | 'dark' | 'auto';
-export type SummaryTimeRange = 'yesterday' | 'last_7' | 'last_13' | 'last_30' | 'last_90' | 'last_180' | 'last_365' | 'custom';
+export type SummaryTimeRange = 'today' | 'last_7' | 'last_30' | 'last_90' | 'ytd' | 'last_year' | 'custom';
 export type SummaryMarketFilter = 'all' | 'US' | 'UK' | 'UAE';
 export type SummaryCategoryFilter = 'all' | 'ring' | 'necklace' | 'bracelet' | 'earring';
 export type SummarySourceFilter = 'all' | 'shopify' | 'amazon';
@@ -598,7 +598,7 @@ export const useStore = create<AppState>()(
         correlationLag: state.correlationLag,
         selectedCorrelation: state.selectedCorrelation,
       }),
-      version: 5, // Increment to force localStorage reset
+      version: 6, // Increment to force localStorage reset
       migrate: (persistedState: unknown, version: number) => {
         if (version < 4) {
           // Reset to defaults for new state structure
@@ -621,6 +621,12 @@ export const useStore = create<AppState>()(
             ...(persistedState as Record<string, unknown>),
             summaryCategoryFilter: 'all',
             summarySourceFilter: 'all',
+          } as AppState;
+        }
+        if (version < 6) {
+          return {
+            ...(persistedState as Record<string, unknown>),
+            summaryTimeRange: 'last_30',
           } as AppState;
         }
         return persistedState as AppState;

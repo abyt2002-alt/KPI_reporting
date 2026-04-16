@@ -9,11 +9,11 @@ import shopifyImage from "../../image_resources/shopify.jpg";
 import amazonImage from "../../image_resources/amazon.jpg";
 
 const SOURCES = [
-  { source: "google_ads" as const, image: googleAdsImage, label: "Google Ads", note: "Campaign" },
-  { source: "google_analytics" as const, image: googleAnalyticsImage, label: "Google Analytics", note: "Property" },
-  { source: "meta_ads" as const, image: metaAdsImage, label: "Meta Ads", note: "Campaign" },
-  { source: "shopify" as const, image: shopifyImage, label: "Shopify", note: "Store" },
-  { source: "amazon_ads" as const, image: amazonImage, label: "Amazon Ads", note: "Search / Sales" },
+  { source: "shopify" as const, image: shopifyImage, label: "Shopify", note: "Sales" },
+  { source: "meta_ads" as const, image: metaAdsImage, label: "Meta Ads", note: "Marketing" },
+  { source: "amazon_ads" as const, image: amazonImage, label: "Amazon Ads", note: "Marketing / Sales" },
+  { source: "google_ads" as const, image: googleAdsImage, label: "Google Ads", note: "Marketing" },
+  { source: "google_analytics" as const, image: googleAnalyticsImage, label: "Google Analytics", note: "Marketing" },
 ];
 
 export function UploadPage() {
@@ -49,9 +49,8 @@ export function UploadPage() {
           <div className="mx-auto max-w-5xl text-center">
             <div className="flex flex-col items-center justify-between gap-5 md:flex-row md:text-left">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-cyan-700">Ingestion sources</p>
                 <h1 className="mt-2 text-4xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-                  Select a source.
+                  Select a data source
                 </h1>
                 <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
                   Choose a platform to configure account, template, and fields.
@@ -77,7 +76,7 @@ export function UploadPage() {
                       Refreshed at {lastRefreshedAt}
                     </span>
                   ) : (
-                    <span>Manual refresh available</span>
+                    <span>Click to update data</span>
                   )}
                 </div>
               </div>

@@ -124,28 +124,22 @@ function normalCDF(x: number): number {
   return x > 0 ? 1 - p : p;
 }
 
-// Format p-value with significance stars
-function formatPValue(p: number): { text: string; stars: string; color: string } {
-  let stars = '';
+// Format p-value with significance coloring
+function formatPValue(p: number): { text: string; color: string } {
   let color = '#999999';
   
   if (p < 0.001) {
-    stars = '***';
     color = '#2D8A4E'; // Green - highly significant
   } else if (p < 0.01) {
-    stars = '**';
     color = '#41C185'; // Light green - very significant
   } else if (p < 0.05) {
-    stars = '*';
     color = '#B8860B'; // Gold - significant
   } else {
-    stars = 'ns';
     color = '#DC2626'; // Red - not significant
   }
   
   return {
     text: p < 0.001 ? '< 0.001' : p.toFixed(3),
-    stars,
     color
   };
 }
@@ -181,25 +175,17 @@ function MultiTargetTable({
   
   return (
     <div ref={tableRef} className="border border-[#E5E5E5] rounded-xl overflow-hidden shadow-sm">
-      <div className="bg-[#FFBD59] px-4 py-3 flex items-center justify-between">
-        <div>
-          <h4 className="text-[16px] font-bold text-[#333333]">{title}</h4>
-          {mode === "rolling" && (
-            <p className="text-[11px] text-[#333333]/70">Rolling sum of {rollingWindow} periods</p>
-          )}
-        </div>
-      </div>
       <div className="max-h-[400px] overflow-y-auto overflow-x-hidden">
-        <table className="w-full table-fixed text-[12px]">
-          <thead className="bg-[#F5F5F5] sticky top-0 z-10">
+        <table className="w-full table-fixed">
+          <thead className="bg-slate-50 sticky top-0 z-10">
             <tr>
               {showTargetColumn && (
-                <th className="w-[22%] text-left px-3 py-3 text-[#475569] font-semibold">Outcome</th>
+                <th className="w-[25%] text-left px-3 py-3 text-[12px] font-semibold text-slate-600">Outcome metric</th>
               )}
-              <th className={`${showTargetColumn ? "w-[30%]" : "w-[40%]"} text-left px-3 py-3 text-[#475569] font-semibold`}>Column</th>
-              <th className={`${showTargetColumn ? "w-[23%]" : "w-[28%]"} text-left px-3 py-3 text-[#475569] font-semibold`}>Best r</th>
-              <th className={`${showTargetColumn ? "w-[25%]" : "w-[32%]"} text-left px-3 py-3 text-[#475569] font-semibold`}>
-                {mode === "rolling" ? `Window (${rollingWindow})` : `Lag (${lagMin} - ${lagMax} days)`}
+              <th className={`${showTargetColumn ? "w-[25%]" : "w-[33.33%]"} text-left px-3 py-3 text-[12px] font-semibold text-slate-600`}>Marketing input metric</th>
+              <th className={`${showTargetColumn ? "w-[25%]" : "w-[33.33%]"} text-center px-3 py-3 text-[12px] font-semibold text-slate-600`}>Highest correlation value</th>
+              <th className={`${showTargetColumn ? "w-[25%]" : "w-[33.33%]"} text-center px-3 py-3 text-[12px] font-semibold text-slate-600`}>
+                {mode === "rolling" ? `Rolling sum (${rollingWindow} days)` : `Lag (${lagMin} - ${lagMax} days)`}
               </th>
             </tr>
           </thead>
@@ -211,48 +197,59 @@ function MultiTargetTable({
                 // Always sort by highest Best r globally (descending).
                 return b.rBest - a.rBest;
               })
-              .map((item, idx) => (
+              .map((item) => (
               <tr 
                 key={`${item.target}:${item.col}`}
                 onClick={() => onRowClick(item)}
-                className={`cursor-pointer hover:bg-[#F8FAFC] transition border-b border-[#F0F0F0] ${idx === 0 ? "bg-[#F8FAFC]" : ""}`}
+                className="cursor-pointer border-b border-slate-100 transition hover:bg-slate-50/70"
               >
                 {showTargetColumn && (
-                  <td className="px-3 py-2.5 text-[#334155] align-top">
-                    <span className="inline-block align-middle break-words leading-4">{targetLabelByColumn?.get(item.target) ?? formatColumnName(item.target)}</span>
+                  <td className="px-3 py-3 align-middle">
+                    <div className="flex min-h-[40px] items-center">
+                      <span className="inline-block w-full truncate whitespace-nowrap text-[13px] leading-5 text-slate-800" title={targetLabelByColumn?.get(item.target) ?? formatColumnName(item.target)}>
+                        {targetLabelByColumn?.get(item.target) ?? formatColumnName(item.target)}
+                      </span>
+                    </div>
                   </td>
                 )}
-                <td className="px-3 py-2.5 text-[#1E293B] align-top" title={item.col}>
-                  {idx === 0 && <span className="text-[#0F766E] mr-1.5">*</span>}
-                  <span className="inline-block align-middle break-words leading-4">{labelByColumn?.get(item.col) ?? formatColumnName(item.col)}</span>
+                <td className="px-3 py-3 align-middle">
+                  <div className="flex min-h-[40px] items-center">
+                    <span className="inline-block w-full truncate whitespace-nowrap text-[13px] leading-5 text-slate-800" title={labelByColumn?.get(item.col) ?? formatColumnName(item.col)}>
+                      {labelByColumn?.get(item.col) ?? formatColumnName(item.col)}
+                    </span>
+                  </div>
                 </td>
-                <td className="px-3 py-2.5 align-top">
-                  <div className={`font-mono text-[16px] font-bold ${
+                <td className="px-3 py-3 align-middle">
+                  <div className="flex min-h-[40px] flex-col justify-center gap-1.5">
+                    <div className={`mx-auto w-[88%] text-left text-[14px] font-semibold tabular-nums ${
                     Math.abs(item.rBest) > 0.7
                       ? item.rBest > 0 ? "text-[#047857]" : "text-[#B91C1C]"
                       : Math.abs(item.rBest) > 0.4 ? "text-[#A16207]" : "text-[#64748B]"
-                  }`}>
-                    {item.rBest.toFixed(2)}
-                  </div>
-                  <div className="mt-1.5 h-1.5 w-full rounded-full bg-[#E2E8F0] overflow-hidden">
-                    <div
-                      className={`h-full rounded-full ${item.rBest >= 0 ? "bg-[#059669]" : "bg-[#E11D48]"}`}
-                      style={{ width: `${Math.max(0, Math.min(100, Math.abs(item.rBest) * 100))}%` }}
-                    />
+                    }`}>
+                      {item.rBest.toFixed(2)}
+                    </div>
+                    <div className="mx-auto h-1.5 w-[88%] overflow-hidden rounded-full bg-slate-200">
+                      <div
+                        className={`h-full rounded-full ${item.rBest >= 0 ? "bg-emerald-600" : "bg-rose-600"}`}
+                        style={{ width: `${Math.max(0, Math.min(100, Math.abs(item.rBest) * 100))}%` }}
+                      />
+                    </div>
                   </div>
                 </td>
-                <td className="px-3 py-2.5 align-top">
-                  <div className="mt-2 h-1.5 w-full rounded-full bg-[#DBEAFE] relative">
-                    <span
-                      className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-[#2563EB] shadow-sm"
-                      style={{
-                        left: `${Math.max(2, Math.min(98, ((item.bestLag - lagMin) / lagRange) * 100))}%`,
-                      }}
-                    />
+                <td className="px-3 py-3 align-middle">
+                  <div className="flex min-h-[40px] flex-col justify-center gap-1.5">
+                    <div className="relative mx-auto h-1.5 w-[88%] rounded-full bg-blue-300">
+                      <span
+                        className="absolute top-1/2 h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-blue-600 shadow-sm"
+                        style={{
+                          left: `${Math.max(2, Math.min(98, ((item.bestLag - lagMin) / lagRange) * 100))}%`,
+                        }}
+                      />
+                    </div>
+                    <p className="mx-auto w-[88%] text-left text-[11px] leading-4 text-slate-500 tabular-nums">
+                      {mode === "rolling" ? `Rolling sum of ${item.bestLag} days` : `at a lag of ${item.bestLag} days`}
+                    </p>
                   </div>
-                  <p className="mt-1.5 text-[11px] text-[#475569] leading-4">
-                    {mode === "rolling" ? `window ${item.bestLag}` : `peaks at day ${item.bestLag}`}
-                  </p>
                 </td>
               </tr>
             ))}
@@ -413,7 +410,7 @@ export function CrossPlatformAnalysisPage() {
       Shopify: [
         toOption("Shopify sales", ["Shopify_Net_items_sold", "Shopify_sales", "Shopify_Sales"]),
         toOption("Shopify sessions", ["Shopify_Sessions", "Shopify_sessions"]),
-        toOption("Shopify add to cart", ["Shopify_Sessions_With_Cart_Additions", "Shopify_add_to_cart", "Shopify_Add_To_Cart"]),
+        toOption("Shopify add to carts", ["Shopify_Sessions_With_Cart_Additions", "Shopify_add_to_cart", "Shopify_Add_To_Cart"]),
       ].filter((item): item is OutcomeOption => item !== null),
       Amazon: [
         toOption("Amazon sales", ["Amazon_total_product_sales", "Amazon_sales", "Amazon_Sales"]),
@@ -773,7 +770,7 @@ export function CrossPlatformAnalysisPage() {
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {/* Select Metrics */}
             <div className="lg:col-span-2" ref={metricsRef}>
-              <label className="block text-[13px] font-semibold text-[#333333] mb-3">Select Metrics</label>
+              <label className="block text-[13px] font-semibold text-[#333333] mb-3">Select Outcome Metrics</label>
               <div className="border border-[#E5E5E5] rounded-xl overflow-hidden">
                 <button
                   onClick={() => setMetricsExpanded(!metricsExpanded)}
@@ -793,7 +790,7 @@ export function CrossPlatformAnalysisPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-3">
                           <img src="/image_resources/amazon.jpg" alt="Amazon" className="w-5 h-5 rounded object-cover" />
-                          <h4 className="text-[13px] font-semibold text-[#333333]">Amazon Outcomes</h4>
+                          <h4 className="text-[13px] font-semibold text-[#333333]">Amazon</h4>
                         </div>
                         <div className="space-y-2">
                           {outcomeMetricOptions.Amazon.map((option) => (
@@ -823,7 +820,7 @@ export function CrossPlatformAnalysisPage() {
                       <div>
                         <div className="flex items-center gap-2 mb-3">
                           <img src="/image_resources/shopify.jpg" alt="Shopify" className="w-5 h-5 rounded object-cover" />
-                          <h4 className="text-[13px] font-semibold text-[#333333]">Shopify Outcomes</h4>
+                          <h4 className="text-[13px] font-semibold text-[#333333]">Shopify</h4>
                         </div>
                         <div className="space-y-2">
                           {outcomeMetricOptions.Shopify.map((option) => (
@@ -879,7 +876,7 @@ export function CrossPlatformAnalysisPage() {
                   }`}
                 >
                   <TrendingUp size={16} />
-                  Lag Analysis
+                  Analyze by lag
                 </button>
                 <button
                   onClick={() => setCorrelationMode("rolling")}
@@ -890,7 +887,7 @@ export function CrossPlatformAnalysisPage() {
                   }`}
                 >
                   <BarChart3 size={16} />
-                  Rolling Sum
+                  Analyze by rolling sum
                 </button>
               </div>
             </div>
@@ -970,7 +967,7 @@ export function CrossPlatformAnalysisPage() {
                     onChange={(e) => setShowOnlyPositive(e.target.checked)}
                     className="w-4 h-4 rounded border-slate-300 text-cyan-600 focus:ring-cyan-500 focus:ring-offset-0"
                   />
-                  <span className="text-sm font-medium text-slate-600 group-hover:text-slate-800">Show only positive</span>
+                  <span className="text-sm font-medium text-slate-600 group-hover:text-slate-800">Show only positive values</span>
                 </label>
               </div>
             </div>
@@ -980,7 +977,6 @@ export function CrossPlatformAnalysisPage() {
         {/* Outcome quick filters */}
         {targetVariables.length > 0 && (
           <div className="mb-5 flex flex-wrap items-center gap-2">
-            <span className="mr-2 text-sm text-slate-500">Outcome:</span>
             <button
               type="button"
               onClick={() => setActiveOutcomeFilter("all")}
@@ -1064,7 +1060,7 @@ export function CrossPlatformAnalysisPage() {
                             ? multiTargetModal.r > 0 ? "text-[#2D8A4E]" : "text-[#DC2626]"
                             : "text-[#B8860B]"
                         }`}>
-                          {multiTargetModal.r.toFixed(3)}
+                          {multiTargetModal.r.toFixed(2)}
                         </span>
                         {multiTargetModal.bestLag !== 0 && (
                           <span className="text-[12px] text-[#458EE2] font-medium">
@@ -1072,7 +1068,6 @@ export function CrossPlatformAnalysisPage() {
                           </span>
                         )}
                       </div>
-                      <p className="text-[10px] text-[#999999] mt-1">Strength of relationship</p>
                     </div>
 
                     {/* Elasticity Card */}
@@ -1084,15 +1079,9 @@ export function CrossPlatformAnalysisPage() {
                         </div>
                         <div className="flex items-baseline gap-1">
                           <span className="text-[20px] font-bold font-mono text-[#FF9500]">
-                            {olsResults.elasticity.toFixed(4)}
-                          </span>
-                          <span className="text-[14px] text-[#999999]">
-                            {olsResults.elasticity > 0 ? 'up' : 'down'}
+                            {olsResults.elasticity.toFixed(2)}
                           </span>
                         </div>
-                        <p className="text-[10px] text-[#999999] mt-1">
-                          Log-log regression coefficient
-                        </p>
                       </div>
                     )}
 
@@ -1110,9 +1099,6 @@ export function CrossPlatformAnalysisPage() {
                         <div className="flex items-baseline gap-2">
                           <span className={`text-[20px] font-bold font-mono`} style={{ color: formatPValue(olsResults.pValue).color }}>
                             {formatPValue(olsResults.pValue).text}
-                          </span>
-                          <span className={`text-[16px] font-bold`} style={{ color: formatPValue(olsResults.pValue).color }}>
-                            {formatPValue(olsResults.pValue).stars}
                           </span>
                         </div>
                         <p className="text-[10px] text-[#999999] mt-1">
@@ -1132,9 +1118,9 @@ export function CrossPlatformAnalysisPage() {
                       </svg>
                       <div className="flex-1">
                         <p className="text-[11px] text-[#2C5282] leading-relaxed">
-                          <span className="font-semibold">Interpretation:</span> Elasticity of <span className="font-bold text-[#FF9500]">{olsResults.elasticity.toFixed(4)}</span> means 
+                          Elasticity of <span className="font-bold text-[#FF9500]">{olsResults.elasticity.toFixed(2)}</span> means 
                           a 1% increase in <span className="font-medium">{displayMetricName(multiTargetModal.col)}</span> leads to 
-                          a <span className="font-bold text-[#FF9500]">{Math.abs(olsResults.elasticity).toFixed(4)}%</span> {olsResults.elasticity > 0 ? 'increase' : 'decrease'} in <span className="font-medium">{displayMetricName(multiTargetModal.target)}</span>.
+                          a <span className="font-bold text-[#FF9500]">{Math.abs(olsResults.elasticity).toFixed(2)}%</span> {olsResults.elasticity > 0 ? 'increase' : 'decrease'} in <span className="font-medium">{displayMetricName(multiTargetModal.target)}</span>.
                           {olsResults.pValue < 0.05 ? (
                             <span className="text-[#2D8A4E] font-medium"> This relationship is statistically reliable (p {formatPValue(olsResults.pValue).text}).</span>
                           ) : (
@@ -1163,14 +1149,14 @@ export function CrossPlatformAnalysisPage() {
                       <CartesianGrid strokeDasharray="3 3" stroke="#E5E5E5" />
                       <XAxis dataKey="lag" tick={{ fontSize: 11, fill: "#666666" }} />
                       <YAxis tick={{ fontSize: 11, fill: "#666666" }} domain={[-1, 1]} />
-                      <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} formatter={(v: number) => v.toFixed(3)} />
+                      <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} formatter={(v: number) => v.toFixed(2)} />
                       <Line type="monotone" dataKey="r" stroke="#FFBD59" strokeWidth={3} dot={{ r: 4, fill: "#FFBD59" }} activeDot={{ r: 6 }} />
                     </LineChart>
                   </ResponsiveContainer>
                   <div className="text-[11px] text-[#666666] mt-3 text-center space-y-1">
-                    <p className="font-medium">Best: lag {multiTargetModal.bestLag} {"->"} r = {multiTargetModal.r.toFixed(3)}</p>
+                    <p className="font-medium">Best: lag {multiTargetModal.bestLag} {"->"} r = {multiTargetModal.r.toFixed(2)}</p>
                     {olsResults && (
-                      <p className="font-medium text-[#458EE2]">R2 = {olsResults.rSquared.toFixed(3)} | beta = {olsResults.beta.toFixed(4)}</p>
+                      <p className="font-medium text-[#458EE2]">R2 = {olsResults.rSquared.toFixed(2)} | beta = {olsResults.beta.toFixed(2)}</p>
                     )}
                     <p className="text-[#999999]">-lag = {displayMetricName(multiTargetModal.target)} leads | +lag = {displayMetricName(multiTargetModal.col)} leads</p>
                   </div>
