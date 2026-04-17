@@ -287,6 +287,7 @@ export function CrossPlatformAnalysisPage() {
   const [rollingWindow, setRollingWindow] = useState(4);
   const [isLoadingSample, setIsLoadingSample] = useState(false);
   const [hasAttemptedAutoLoad, setHasAttemptedAutoLoad] = useState(false);
+  const [isAnalysisRun, setIsAnalysisRun] = useState(false);
   const [activeOutcomeFilter, setActiveOutcomeFilter] = useState<string>("all");
   const [startDate, setStartDate] = useState("2025-01-01");
   const [endDate, setEndDate] = useState("2025-11-15");
@@ -513,22 +514,9 @@ export function CrossPlatformAnalysisPage() {
     }
   }, [dataset, isLoadingSample, hasAttemptedAutoLoad]);
   
-  // Auto-select default metrics when data loads
   useEffect(() => {
-    if (filteredDataset && targetVariables.length === 0) {
-      const salesMetrics = [
-        ...outcomeMetricOptions.Shopify,
-        ...outcomeMetricOptions.Amazon,
-      ]
-        .filter((option) => option.label === "Shopify sales" || option.label === "Amazon sales")
-        .map((option) => option.column)
-        .slice(0, 2);
-      
-      if (salesMetrics.length > 0) {
-        setTargetVariables(salesMetrics);
-      }
-    }
-  }, [filteredDataset, outcomeMetricOptions, targetVariables.length]);
+    setIsAnalysisRun(false);
+  }, [targetVariables, correlationMode, rollingWindow, lagMin, lagMax, startDate, endDate, showOnlyPositive]);
 
   // Calculate correlation with lag
   const calculateLaggedCorrelation = (col1: string, col2: string, lagValue: number, rows?: Record<string, unknown>[]) => {
@@ -730,41 +718,16 @@ export function CrossPlatformAnalysisPage() {
     return calculateOLS(xData, yData);
   }, [multiTargetModal, filteredDataset]);
 
-  if (!dataset) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-[#F8F9FA] to-[#E9ECEF]">
-        <div className="p-8 max-w-[1600px] mx-auto">
-          <div className="bg-white rounded-2xl shadow-sm border border-[#E5E5E5] p-16 text-center">
-            <div className="max-w-md mx-auto">
-              <div className="w-20 h-20 bg-gradient-to-br from-[#FFBD59] to-[#FFD699] rounded-2xl flex items-center justify-center mx-auto mb-6">
-                <TrendingUp size={40} className="text-white" />
-              </div>
-              <h3 className="text-[24px] font-bold text-[#333333] mb-3">
-                {isLoadingSample ? "Loading Cross-Platform Data" : "Unable to Load Data"}
-              </h3>
-              <p className="text-[15px] text-[#666666] mb-8">
-                {isLoadingSample
-                  ? "Preparing sample data for cross-platform correlation analysis."
-                  : "Automatic sample load failed. Please retry."}
-              </p>
-              {!isLoadingSample && (
-                <button
-                  onClick={loadSampleData}
-                  className="px-8 py-4 bg-gradient-to-r from-[#FFBD59] to-[#FFD699] text-[#333333] rounded-xl hover:shadow-lg transition font-semibold inline-flex items-center gap-3"
-                >
-                  Retry loading data
-                </button>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#F8F9FA] to-[#E9ECEF]">
       <div className="p-8 max-w-[1600px] mx-auto">
+        {!dataset ? (
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
+            {isLoadingSample
+              ? "Preparing sample data for cross-platform correlation analysis..."
+              : "Loading data..."}
+          </div>
+        ) : null}
         {/* Configuration Panel */}
         <div className="bg-white rounded-2xl shadow-sm border border-[#E5E5E5] p-6 mb-6">
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -970,12 +933,24 @@ export function CrossPlatformAnalysisPage() {
                   <span className="text-sm font-medium text-slate-600 group-hover:text-slate-800">Show only positive values</span>
                 </label>
               </div>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveOutcomeFilter("all");
+                  setIsAnalysisRun(true);
+                }}
+                disabled={!dataset || isLoadingSample || targetVariables.length === 0}
+                className="inline-flex items-center rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Run analysis
+              </button>
             </div>
           </div>
         </div>
 
         {/* Outcome quick filters */}
-        {targetVariables.length > 0 && (
+        {isAnalysisRun && targetVariables.length > 0 && (
           <div className="mb-5 flex flex-wrap items-center gap-2">
             <button
               type="button"
@@ -1006,7 +981,7 @@ export function CrossPlatformAnalysisPage() {
         )}
 
         {/* Results Table */}
-        {multiTargetAnalysis && visibleTargets.length > 0 && (
+        {isAnalysisRun && multiTargetAnalysis && visibleTargets.length > 0 && (
           <div>
             <MultiTargetTable 
               title={activeOutcomeFilter === "all" ? "All selected outcomes" : `${displayMetricName(visibleTargets[0] || "")} correlations`}
@@ -1024,7 +999,15 @@ export function CrossPlatformAnalysisPage() {
           </div>
         )}
 
-        {targetVariables.length === 0 && (
+        {!isAnalysisRun && (
+          <div className="bg-white rounded-2xl shadow-sm border border-[#E5E5E5] p-12 text-center">
+            <TrendingUp size={48} className="mx-auto mb-4 text-[#CCCCCC]" />
+            <h3 className="text-[18px] font-semibold text-[#333333] mb-2">Run analysis to view results</h3>
+            <p className="text-[14px] text-[#999999]">Select one or more outcome metrics, then click Run analysis.</p>
+          </div>
+        )}
+
+        {isAnalysisRun && targetVariables.length === 0 && (
           <div className="bg-white rounded-2xl shadow-sm border border-[#E5E5E5] p-12 text-center">
             <TrendingUp size={48} className="mx-auto mb-4 text-[#CCCCCC]" />
             <h3 className="text-[18px] font-semibold text-[#333333] mb-2">No Metrics Selected</h3>

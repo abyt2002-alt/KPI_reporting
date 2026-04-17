@@ -25,10 +25,10 @@ const SUMMARY_MARKET_OPTIONS: Array<{ value: SummaryMarketFilter; label: string 
 
 const SUMMARY_CATEGORY_OPTIONS: Array<{ value: SummaryCategoryFilter; label: string }> = [
   { value: "all", label: "All products" },
-  { value: "ring", label: "Ring" },
-  { value: "necklace", label: "Necklace" },
-  { value: "bracelet", label: "Bracelet" },
-  { value: "earring", label: "Earring" },
+  { value: "ring", label: "Cleanser" },
+  { value: "necklace", label: "Face Cream" },
+  { value: "bracelet", label: "Face Serum" },
+  { value: "earring", label: "Sunscreen" },
 ];
 
 const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string; image?: string }> = [
@@ -46,6 +46,7 @@ export function Header() {
     compactMode,
     setCompactMode,
     activeTab,
+    isSummaryCompareMode,
     summaryTimeRange,
     summaryMarketFilter,
     summaryCategoryFilter,
@@ -137,7 +138,7 @@ export function Header() {
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3">
-          {isSummary ? (
+          {isSummary && !isSummaryCompareMode ? (
             <>
               <label className="group relative">
                 <CalendarDays size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />

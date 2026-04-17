@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   DollarSign,
@@ -150,10 +150,10 @@ const SUMMARY_MARKET_OPTIONS: Array<{ value: SummaryMarketFilter; label: string 
 
 const SUMMARY_CATEGORY_OPTIONS: Array<{ value: SummaryCategoryFilter; label: string }> = [
   { value: "all", label: "All products" },
-  { value: "ring", label: "Ring" },
-  { value: "necklace", label: "Necklace" },
-  { value: "bracelet", label: "Bracelet" },
-  { value: "earring", label: "Earring" },
+  { value: "ring", label: "Cleanser" },
+  { value: "necklace", label: "Face Cream" },
+  { value: "bracelet", label: "Face Serum" },
+  { value: "earring", label: "Sunscreen" },
 ];
 
 const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string }> = [
@@ -211,10 +211,10 @@ const SUMMARY_TIME_LABELS: Record<SummaryTimeRange, string> = {
 
 const SUMMARY_CATEGORY_LABELS: Record<SummaryCategoryFilter, string> = {
   all: "All products",
-  ring: "Ring",
-  necklace: "Necklace",
-  bracelet: "Bracelet",
-  earring: "Earring",
+  ring: "Cleanser",
+  necklace: "Face Cream",
+  bracelet: "Face Serum",
+  earring: "Sunscreen",
 };
 
 const SUMMARY_SOURCE_LABELS: Record<SummarySourceFilter, string> = {
@@ -846,6 +846,7 @@ const buildAiSummaryMetrics = (cards: MetricCardView[]) =>
   }));
 
 export function SummaryPage() {
+  const setSummaryCompareMode = useStore((state) => state.setSummaryCompareMode);
   const summaryTimeRange = useStore((state) => state.summaryTimeRange);
   const summaryMarketFilter = useStore((state) => state.summaryMarketFilter);
   const summaryCategoryFilter = useStore((state) => state.summaryCategoryFilter);
@@ -860,8 +861,18 @@ export function SummaryPage() {
   const [isAiSummaryLoading, setIsAiSummaryLoading] = useState(false);
   const [aiSummarySignature, setAiSummarySignature] = useState<string | null>(null);
   const [marketingChannel, setMarketingChannel] = useState<'blended' | 'meta' | 'google'>('blended');
+  const [compareMarketingChannels, setCompareMarketingChannels] = useState<Record<CompareSide, 'blended' | 'meta' | 'google'>>({
+    left: "blended",
+    right: "blended",
+    third: "blended",
+    fourth: "blended",
+  });
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [activeCompareSide, setActiveCompareSide] = useState<CompareSide | null>(null);
+  const [compareLeftName, setCompareLeftName] = useState("View A");
+  const [compareRightName, setCompareRightName] = useState("View B");
+  const [compareThirdName, setCompareThirdName] = useState("View C");
+  const [compareFourthName, setCompareFourthName] = useState("View D");
   const [compareLeft, setCompareLeft] = useState<SummarySelection>({
     timeRange: "last_30",
     market: "all",
@@ -921,7 +932,13 @@ export function SummaryPage() {
     setCompareThird(null);
     setCompareFourth(null);
     setActiveCompareSide(null);
+    setCompareLeftName("View A");
+    setCompareRightName("View B");
+    setCompareThirdName("View C");
+    setCompareFourthName("View D");
+    setCompareMarketingChannels({ left: "blended", right: "blended", third: "blended", fourth: "blended" });
     setIsCompareMode(true);
+    setSummaryCompareMode(true);
   };
 
   const addCompareView = () => {
@@ -940,15 +957,172 @@ export function SummaryPage() {
       side: CompareSide;
       cards: MetricCardView[];
       selection: SummarySelection;
+      dailyPoints: DailyMetricPoint[];
+      selectedDates: string[];
       removable?: boolean;
     }> = [
-      { title: "View A", side: "left", cards: compareLeftView.metricCards, selection: compareLeft, removable: false },
-      { title: "View B", side: "right", cards: compareRightView.metricCards, selection: compareRight, removable: false },
+      { title: compareLeftName, side: "left", cards: compareLeftView.metricCards, selection: compareLeft, dailyPoints: compareLeftView.dailyPoints, selectedDates: compareLeftView.selectedDates, removable: false },
+      { title: compareRightName, side: "right", cards: compareRightView.metricCards, selection: compareRight, dailyPoints: compareRightView.dailyPoints, selectedDates: compareRightView.selectedDates, removable: false },
     ];
-    if (compareThirdView && compareThird) views.push({ title: "View C", side: "third", cards: compareThirdView.metricCards, selection: compareThird, removable: true });
-    if (compareFourthView && compareFourth) views.push({ title: "View D", side: "fourth", cards: compareFourthView.metricCards, selection: compareFourth, removable: true });
+    if (compareThirdView && compareThird) views.push({ title: compareThirdName, side: "third", cards: compareThirdView.metricCards, selection: compareThird, dailyPoints: compareThirdView.dailyPoints, selectedDates: compareThirdView.selectedDates, removable: true });
+    if (compareFourthView && compareFourth) views.push({ title: compareFourthName, side: "fourth", cards: compareFourthView.metricCards, selection: compareFourth, dailyPoints: compareFourthView.dailyPoints, selectedDates: compareFourthView.selectedDates, removable: true });
     return views;
-  }, [compareFourth, compareFourthView, compareLeft, compareLeftView.metricCards, compareRight, compareRightView.metricCards, compareThird, compareThirdView]);
+  }, [compareFourth, compareFourthName, compareFourthView, compareLeft, compareLeftName, compareLeftView, compareRight, compareRightName, compareRightView, compareThird, compareThirdName, compareThirdView]);
+
+  const updateCompareSelection = (side: CompareSide, updates: Partial<SummarySelection>) => {
+    if (side === "left") {
+      setCompareLeft((current) => ({ ...current, ...updates }));
+    } else if (side === "right") {
+      setCompareRight((current) => ({ ...current, ...updates }));
+    } else if (side === "third") {
+      setCompareThird((current) => (current ? { ...current, ...updates } : current));
+    } else if (side === "fourth") {
+      setCompareFourth((current) => (current ? { ...current, ...updates } : current));
+    }
+  };
+
+  const updateCompareName = (side: CompareSide, value: string) => {
+    if (side === "left") setCompareLeftName(value);
+    if (side === "right") setCompareRightName(value);
+    if (side === "third") setCompareThirdName(value);
+    if (side === "fourth") setCompareFourthName(value);
+  };
+
+  const renderCompareDeepDiveSections = (
+    side: CompareSide,
+    selection: SummarySelection,
+    panelDailyPoints: DailyMetricPoint[],
+    panelSelectedDates: string[]
+  ) => {
+    const panelMarketingChannel = compareMarketingChannels[side] ?? "blended";
+    const setPanelMarketingChannel = (value: 'blended' | 'meta' | 'google') =>
+      setCompareMarketingChannels((current) => ({ ...current, [side]: value }));
+    const topProducts = [
+      { name: 'Cleanser', shopify: '28.4%', amazon: '31.2%' },
+      { name: 'Face Cream', shopify: '24.1%', amazon: '22.8%' },
+      { name: 'Face Serum', shopify: '19.7%', amazon: '18.5%' },
+      { name: 'Sunscreen', shopify: '16.3%', amazon: '17.9%' },
+      { name: 'Pendant', shopify: '11.5%', amazon: '9.6%' },
+    ];
+    const productRows = selection.category !== "all"
+      ? topProducts.filter((item) => item.name === SUMMARY_CATEGORY_LABELS[selection.category]).concat(topProducts.filter((item) => item.name !== SUMMARY_CATEGORY_LABELS[selection.category]).slice(0, 4))
+      : topProducts;
+
+    return (
+      <>
+        <section className="mt-6">
+          <div className="rounded-3xl border border-white/80 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+            <div className="mb-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Sales deep dive</p>
+              <p className="mt-1 text-sm text-slate-600">Weekly sales - last {panelSelectedDates.length} {panelSelectedDates.length === 1 ? "day" : "days"}</p>
+            </div>
+            <div className="grid gap-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Revenue over time</p>
+                <div className="mt-3 h-[200px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sampleObjects(panelDailyPoints, 30)}>
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => formatCurrencyCompact(v)} />
+                      <Tooltip formatter={(v) => formatCurrencyCompact(Number(v))} />
+                      <Line type="monotone" dataKey="revenue" name="Shopify" stroke="#3b82f6" strokeWidth={2.5} dot={false} />
+                      <Line type="monotone" dataKey="media_spend" name="Amazon" stroke="#06b6d4" strokeWidth={2.5} dot={false} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Top 5 products by revenue contribution</p>
+                <div className="mt-3 space-y-2.5">
+                  {productRows.map((product) => (
+                    <div key={`${side}-${product.name}`} className="flex items-center justify-between text-sm">
+                      <span className="font-medium text-slate-700">{product.name}</span>
+                      <div className="flex items-center gap-3 text-xs">
+                        <span className="text-slate-600"><span className="font-semibold text-blue-600">{product.shopify}</span> Shopify</span>
+                        <span className="text-slate-600"><span className="font-semibold text-cyan-600">{product.amazon}</span> Amazon</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section className="mt-6">
+          <div className="rounded-3xl border border-white/80 bg-white/90 p-5 shadow-[0_16px_40px_rgba(15,23,42,0.08)] backdrop-blur">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Marketing deep dive</p>
+                <p className="mt-1 text-sm text-slate-600">Weekly view - last {panelSelectedDates.length} {panelSelectedDates.length === 1 ? "day" : "days"}</p>
+              </div>
+              <select
+                value={panelMarketingChannel}
+                onChange={(event) => setPanelMarketingChannel(event.target.value as 'blended' | 'meta' | 'google')}
+                className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700"
+              >
+                <option value="blended">Blended</option>
+                <option value="meta">Meta</option>
+                <option value="google">Google</option>
+              </select>
+            </div>
+            <div className="grid gap-4">
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Ad spend over time</p>
+                <div className="mt-3 h-[220px]">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={sampleObjects(panelDailyPoints, 30)}>
+                      <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fill: "#64748b", fontSize: 11 }} />
+                      <YAxis tick={{ fill: "#64748b", fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} />
+                      <Tooltip formatter={(v) => formatCurrencyCompact(Number(v))} />
+                      {panelMarketingChannel === 'blended' && (<><Line type="monotone" dataKey="media_spend" name="Ads composition" stroke="#0f172a" strokeWidth={2.5} dot={false} /><Line type="monotone" dataKey="google_spend" name="Google Ads" stroke="#94a3b8" strokeWidth={2} strokeDasharray="5 5" dot={false} /></>)}
+                      {panelMarketingChannel === 'meta' && <Line type="monotone" dataKey="media_spend" name="Meta Ads" stroke="#ef4444" strokeWidth={2.5} dot={false} />}
+                      {panelMarketingChannel === 'google' && <Line type="monotone" dataKey="google_spend" name="Google Ads" stroke="#3b82f6" strokeWidth={2.5} dot={false} />}
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <p className="text-sm font-semibold text-slate-900">Spend split</p>
+                <div className="mt-4 flex items-center justify-center">
+                  <div className="relative h-[140px] w-[140px]">
+                    <svg viewBox="0 0 100 100" className="transform -rotate-90">
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#3b82f6" strokeWidth="20" strokeDasharray="188.5 251.3" />
+                      <circle cx="50" cy="50" r="40" fill="none" stroke="#ef4444" strokeWidth="20" strokeDasharray="62.8 251.3" strokeDashoffset="-188.5" />
+                    </svg>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <div className="text-center">
+                        <p className="text-xs text-slate-500">Total</p>
+                        <p className="text-lg font-bold text-slate-900">100%</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-blue-500" />
+                      <span className="text-slate-600">Google Ads</span>
+                    </div>
+                    <span className="font-semibold text-slate-900">75%</span>
+                  </div>
+                  <div className="flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2">
+                      <div className="h-3 w-3 rounded-full bg-red-500" />
+                      <span className="text-slate-600">Meta Ads</span>
+                    </div>
+                    <span className="font-semibold text-slate-900">25%</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </>
+    );
+  };
 
   const selectedMetricDefinition = useMemo(
     () => METRIC_DEFINITIONS.find((item) => item.key === activeMetric) ?? null,
@@ -1197,9 +1371,15 @@ export function SummaryPage() {
     summaryTimeRange,
   ]);
 
+  useEffect(() => {
+    setSummaryCompareMode(isCompareMode);
+  }, [isCompareMode, setSummaryCompareMode]);
+
+  useEffect(() => () => setSummaryCompareMode(false), [setSummaryCompareMode]);
+
   return (
     <div className="min-h-full bg-[radial-gradient(circle_at_20%_0%,rgba(14,165,233,0.14),transparent_36%),radial-gradient(circle_at_80%_10%,rgba(16,185,129,0.12),transparent_30%),linear-gradient(180deg,#f8fafc_0%,#ffffff_56%,#eef2ff_100%)] px-6 py-6 lg:px-8">
-      <div className="mx-auto flex w-full max-w-7xl flex-col gap-5">
+      <div className={`mx-auto flex w-full flex-col gap-5 ${isCompareMode ? "max-w-none" : "max-w-7xl"}`}>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <button
             type="button"
@@ -1207,6 +1387,7 @@ export function SummaryPage() {
               if (isCompareMode) {
                 setIsCompareMode(false);
                 setActiveCompareSide(null);
+                setSummaryCompareMode(false);
                 return;
               }
               openCompareMode();
@@ -1218,17 +1399,15 @@ export function SummaryPage() {
             }`}
           >
             <SlidersHorizontal size={16} />
-            {isCompareMode ? "Exit compare mode" : "Compare mode"}
+            {isCompareMode ? "Exit comparison mode" : "Comparison mode"}
           </button>
         </div>
 
         {isCompareMode ? (
-          <section className="relative overflow-hidden rounded-[32px] border border-cyan-100 bg-white/80 p-5 shadow-[0_22px_60px_rgba(15,23,42,0.10)]">
-            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_8%_0%,rgba(14,165,233,0.13),transparent_28%),radial-gradient(circle_at_92%_0%,rgba(16,185,129,0.13),transparent_28%)]" />
-            <div className="relative mb-5 flex flex-wrap items-end justify-between gap-3">
+          <section>
+            <div className="mb-5 flex flex-wrap items-end justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-700">Comparison setup</p>
-                <h3 className="mt-1 text-xl font-semibold text-slate-950">Choose filters by column, then open any side of a card.</h3>
+                <h3 className="mt-1 text-xl font-semibold text-slate-950">Set filters to compare two or more views</h3>
               </div>
               <div className="flex items-center gap-2">
                 <button
@@ -1243,30 +1422,133 @@ export function SummaryPage() {
                 </button>
               </div>
             </div>
-            <div className="relative mt-5">
-              <CompareMetricSplitGrid
-                views={compareCardViews}
-                onSelectionChange={(side, updates) => {
-                  if (side === "left") {
-                    setCompareLeft((current) => ({ ...current, ...updates }));
-                  } else if (side === "right") {
-                    setCompareRight((current) => ({ ...current, ...updates }));
-                  } else if (side === "third") {
-                    setCompareThird((current) => (current ? { ...current, ...updates } : current));
-                  } else if (side === "fourth") {
-                    setCompareFourth((current) => (current ? { ...current, ...updates } : current));
-                  }
-                }}
-                onRemoveView={(side) => {
-                  if (side === "third") setCompareThird(null);
-                  if (side === "fourth") setCompareFourth(null);
-                }}
-                onMetricClick={(key, side) => {
-                  setActiveMetric(key);
-                  setActiveCompareSide(side);
-                  setDetailTab("bars");
-                }}
-              />
+            <div className={`mt-5 pb-2 ${compareCardViews.length === 2 ? "overflow-visible" : "overflow-x-auto"}`}>
+              <div
+                className={
+                  compareCardViews.length === 2
+                    ? "grid grid-cols-2 items-start gap-4"
+                    : "flex min-w-max items-start gap-5 pr-2"
+                }
+              >
+                {compareCardViews.map(({ title, side, cards, selection, dailyPoints: panelDailyPoints, selectedDates: panelSelectedDates, removable }) => (
+                  <div
+                    key={side}
+                    className={
+                      compareCardViews.length === 2
+                        ? "min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                        : "w-[calc((100vw-7rem)/2)] min-w-[calc((100vw-7rem)/2)] shrink-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm"
+                    }
+                  >
+                    <div className="sticky top-2 z-20 -mx-1 mb-3 rounded-xl border border-slate-200 bg-white/95 px-1 pb-2 pt-1 shadow-sm backdrop-blur">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <input
+                          type="text"
+                          value={title}
+                          onChange={(event) => updateCompareName(side, event.target.value)}
+                          className="w-full max-w-[260px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                        />
+                        {removable ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (side === "third") setCompareThird(null);
+                              if (side === "fourth") setCompareFourth(null);
+                            }}
+                            className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-slate-300 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-700"
+                            title={`Remove ${title}`}
+                          >
+                            <X size={14} />
+                          </button>
+                        ) : null}
+                      </div>
+
+                      <div className="mb-3 grid grid-cols-2 gap-2">
+                        <select
+                          value={selection.timeRange}
+                          onChange={(event) => updateCompareSelection(side, { timeRange: event.target.value as SummaryTimeRange })}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                        >
+                          {SUMMARY_TIME_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={selection.market}
+                          onChange={(event) => updateCompareSelection(side, { market: event.target.value as SummaryMarketFilter })}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                        >
+                          {SUMMARY_MARKET_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={selection.category}
+                          onChange={(event) => updateCompareSelection(side, { category: event.target.value as SummaryCategoryFilter })}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                        >
+                          {SUMMARY_CATEGORY_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <select
+                          value={selection.source}
+                          onChange={(event) => updateCompareSelection(side, { source: event.target.value as SummarySourceFilter })}
+                          className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                        >
+                          {SUMMARY_SOURCE_OPTIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      {selection.timeRange === "custom" ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="date"
+                            min={FY25_START_DATE}
+                            max={selection.endDate || FY25_END_DATE}
+                            value={selection.startDate}
+                            onChange={(event) => {
+                              const startDate = event.target.value;
+                              updateCompareSelection(side, { startDate, endDate: startDate > selection.endDate ? startDate : selection.endDate });
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                          />
+                          <input
+                            type="date"
+                            min={selection.startDate || FY25_START_DATE}
+                            max={FY25_END_DATE}
+                            value={selection.endDate}
+                            onChange={(event) => {
+                              const endDate = event.target.value;
+                              updateCompareSelection(side, { endDate, startDate: endDate < selection.startDate ? endDate : selection.startDate });
+                            }}
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-[11px] font-medium text-slate-700 outline-none transition focus:border-cyan-400 focus:ring-2 focus:ring-cyan-100"
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <MetricCardGrid
+                      cards={cards}
+                      onMetricClick={(key) => {
+                        setActiveMetric(key);
+                        setActiveCompareSide(side);
+                        setDetailTab("bars");
+                      }}
+                    />
+                    {renderCompareDeepDiveSections(side, selection, panelDailyPoints, panelSelectedDates)}
+                  </div>
+                ))}
+              </div>
             </div>
           </section>
         ) : (
@@ -1572,10 +1854,10 @@ export function SummaryPage() {
                 <div className="mt-4 space-y-3">
                   {(() => {
                     const allProducts = [
-                      { name: 'Ring', shopify: '28.4%', amazon: '31.2%' },
-                      { name: 'Necklace', shopify: '24.1%', amazon: '22.8%' },
-                      { name: 'Bracelet', shopify: '19.7%', amazon: '18.5%' },
-                      { name: 'Earring', shopify: '16.3%', amazon: '17.9%' },
+                      { name: 'Cleanser', shopify: '28.4%', amazon: '31.2%' },
+                      { name: 'Face Cream', shopify: '24.1%', amazon: '22.8%' },
+                      { name: 'Face Serum', shopify: '19.7%', amazon: '18.5%' },
+                      { name: 'Sunscreen', shopify: '16.3%', amazon: '17.9%' },
                       { name: 'Pendant', shopify: '11.5%', amazon: '9.6%' },
                     ];
                     

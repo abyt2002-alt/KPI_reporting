@@ -228,6 +228,7 @@ interface AppState {
   // Saved reports
   savedReports: SavedReport[];
   activeTab: 'upload' | 'summary' | 'campaign_assessment' | 'cross_platform_analysis' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports';
+  isSummaryCompareMode: boolean;
   summaryTimeRange: SummaryTimeRange;
   summaryMarketFilter: SummaryMarketFilter;
   summaryCategoryFilter: SummaryCategoryFilter;
@@ -265,6 +266,7 @@ interface AppState {
   removeChart: (id: string) => void;
   updateChart: (id: string, updates: Partial<ChartConfig>) => void;
   setActiveTab: (tab: 'upload' | 'summary' | 'campaign_assessment' | 'cross_platform_analysis' | 'roas_playground' | 'charts' | 'modeling' | 'kalman' | 'reports') => void;
+  setSummaryCompareMode: (enabled: boolean) => void;
   setSummaryTimeRange: (range: SummaryTimeRange) => void;
   setSummaryMarketFilter: (market: SummaryMarketFilter) => void;
   setSummaryCategoryFilter: (category: SummaryCategoryFilter) => void;
@@ -400,6 +402,7 @@ export const useStore = create<AppState>()(
       currentReportItems: [],
       savedReports: [],
       activeTab: 'upload',
+      isSummaryCompareMode: false,
       summaryTimeRange: 'last_30',
       summaryMarketFilter: 'all',
       summaryCategoryFilter: 'all',
@@ -444,6 +447,7 @@ export const useStore = create<AppState>()(
         charts: s.charts.map((c) => c.id === id ? { ...c, ...updates } : c) 
       })),
       setActiveTab: (activeTab) => set({ activeTab }),
+      setSummaryCompareMode: (isSummaryCompareMode) => set({ isSummaryCompareMode }),
       setSummaryTimeRange: (summaryTimeRange) => set({ summaryTimeRange }),
       setSummaryMarketFilter: (summaryMarketFilter) => set({ summaryMarketFilter }),
       setSummaryCategoryFilter: (summaryCategoryFilter) => set({ summaryCategoryFilter }),
