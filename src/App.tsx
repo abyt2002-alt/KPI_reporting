@@ -1,14 +1,21 @@
 import { Sidebar } from './components/Sidebar';
 import { Header } from './components/Header';
+import { useEffect } from 'react';
 import { UploadPage } from './modules/UploadPage';
 import { SummaryPage } from './modules/SummaryPage';
 import { CampaignAssessmentPage } from './modules/CampaignAssessmentPage';
 import { CrossPlatformAnalysisPage } from './modules/CrossPlatformAnalysisPage';
-import { RoasPlaygroundPage } from './modules/RoasPlaygroundPage';
 import { useStore } from './store/useStore';
 
 function App() {
   const activeTab = useStore((s) => s.activeTab);
+  const setActiveTab = useStore((s) => s.setActiveTab);
+
+  useEffect(() => {
+    if (activeTab === "roas_playground") {
+      setActiveTab("summary");
+    }
+  }, [activeTab, setActiveTab]);
 
   return (
     <div className="flex h-screen bg-slate-100">
@@ -24,9 +31,6 @@ function App() {
           </div>
           <div style={{ display: activeTab === "campaign_assessment" ? "block" : "none" }}>
             <CampaignAssessmentPage />
-          </div>
-          <div style={{ display: activeTab === "roas_playground" ? "block" : "none" }}>
-            <RoasPlaygroundPage />
           </div>
           <div style={{ display: activeTab === "upload" ? "block" : "none" }}>
             <UploadPage />

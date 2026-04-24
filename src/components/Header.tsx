@@ -7,13 +7,12 @@ import amazonImage from "../../image_resources/amazon.jpg";
 import shopifyImage from "../../image_resources/shopify.jpg";
 
 const SUMMARY_TIME_OPTIONS: Array<{ value: SummaryTimeRange; label: string }> = [
-  { value: "yesterday", label: "Yesterday" },
+  { value: "today", label: "Today" },
   { value: "last_7", label: "Last 7 days" },
-  { value: "last_13", label: "Last 13 days" },
   { value: "last_30", label: "Last 30 days" },
   { value: "last_90", label: "Last 90 days" },
-  { value: "last_180", label: "Last 180 days" },
-  { value: "last_365", label: "Last 365 days" },
+  { value: "ytd", label: "Year to date" },
+  { value: "last_year", label: "Last year" },
   { value: "custom", label: "Custom range" },
 ];
 
@@ -26,10 +25,10 @@ const SUMMARY_MARKET_OPTIONS: Array<{ value: SummaryMarketFilter; label: string 
 
 const SUMMARY_CATEGORY_OPTIONS: Array<{ value: SummaryCategoryFilter; label: string }> = [
   { value: "all", label: "All products" },
-  { value: "ring", label: "Ring" },
-  { value: "necklace", label: "Necklace" },
-  { value: "bracelet", label: "Bracelet" },
-  { value: "earring", label: "Earring" },
+  { value: "ring", label: "Cleanser" },
+  { value: "necklace", label: "Face Cream" },
+  { value: "bracelet", label: "Face Serum" },
+  { value: "earring", label: "Sunscreen" },
 ];
 
 const SUMMARY_SOURCE_OPTIONS: Array<{ value: SummarySourceFilter; label: string; image?: string }> = [
@@ -47,6 +46,7 @@ export function Header() {
     compactMode,
     setCompactMode,
     activeTab,
+    isSummaryCompareMode,
     summaryTimeRange,
     summaryMarketFilter,
     summaryCategoryFilter,
@@ -76,8 +76,6 @@ export function Header() {
     }
   }, [isMenuOpen, showSettings]);
 
-  if (!user) return null;
-
   const handleLogout = () => {
     if (confirm("Are you sure you want to logout?")) {
       logout();
@@ -95,6 +93,7 @@ export function Header() {
   const isCampaignAssessment = activeTab === "campaign_assessment";
   const isRoasPlayground = activeTab === "roas_playground";
   const isCrossPlatform = activeTab === "cross_platform_analysis";
+  const isUpload = activeTab === "upload";
   const isCustomSummaryRange = isSummary && summaryTimeRange === "custom";
 
   const handleSummaryRangeChange = (value: SummaryTimeRange) => {
@@ -110,34 +109,36 @@ export function Header() {
     <>
       <header className="min-h-16 bg-white border-b border-slate-200 flex items-center justify-between gap-4 px-6 py-2 shadow-sm">
         <div className="flex items-center gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-800">
-              {isSummary 
-                ? "Summary Workspace" 
-                : isCampaignAssessment 
-                  ? "Campaign Assessment" 
-                  : isRoasPlayground 
-                    ? "ROAS Playground" 
+          {!isUpload && !isSummary && !isCrossPlatform && !isCampaignAssessment ? (
+            <div>
+              <h2 className="text-lg font-semibold text-slate-800">
+                {isSummary 
+                  ? "Summary Workspace" 
+                  : isCampaignAssessment 
+                    ? "Campaign Assessment" 
+                    : isRoasPlayground 
+                      ? "ROAS Playground" 
+                      : isCrossPlatform
+                        ? "Cross Platform Analysis"
+                        : "Ingestion Workspace"}
+              </h2>
+              <p className="text-xs text-slate-500">
+                {isSummary
+                  ? "Time/market KPI view with daily trend drill-downs"
+                  : isCampaignAssessment
+                    ? "Counterfactual campaign lift and spend reallocation demo"
+                  : isRoasPlayground
+                    ? "Tool-style ROAS scenario testing and configuration"
                     : isCrossPlatform
-                      ? "Cross Platform Analysis"
-                      : "Ingestion Workspace"}
-            </h2>
-            <p className="text-xs text-slate-500">
-              {isSummary
-                ? "Time/market KPI view with daily trend drill-downs"
-                : isCampaignAssessment
-                  ? "Counterfactual campaign lift and spend reallocation demo"
-                : isRoasPlayground
-                  ? "Tool-style ROAS scenario testing and configuration"
-                  : isCrossPlatform
-                    ? "Discover correlations and lag effects between marketing channels"
-                    : "Source setup and ingestion workflow connected to backend"}
-            </p>
-          </div>
+                      ? "Discover correlations and lag effects between marketing channels"
+                      : "Source setup and ingestion workflow connected to backend"}
+              </p>
+            </div>
+          ) : null}
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-3">
-          {isSummary ? (
+          {isSummary && !isSummaryCompareMode ? (
             <>
               <label className="group relative">
                 <CalendarDays size={16} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
@@ -246,87 +247,89 @@ export function Header() {
             </>
           ) : null}
 
-          <div className="relative" ref={menuRef}>
-            <button
-              onClick={() => setIsMenuOpen(!isMenuOpen)}
-              className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors"
-            >
-              <div className="w-9 h-9 bg-gradient-to-br from-cyan-400 to-emerald-500 rounded-full flex items-center justify-center shadow-md">
-                <User size={18} className="text-white" />
-              </div>
-              <div className="text-left">
-                <p className="text-sm font-semibold text-slate-800">{user.name}</p>
-                <p className="text-xs text-slate-500">{user.email}</p>
-              </div>
-              <ChevronDown size={18} className={`text-slate-400 transition-transform ${isMenuOpen ? "rotate-180" : ""}`} />
-            </button>
-
-            {isMenuOpen && !showSettings && (
-              <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50">
-                <div className="px-4 py-3 border-b border-slate-100">
+          {user ? (
+            <div className="relative" ref={menuRef}>
+              <button
+                onClick={() => setIsMenuOpen(!isMenuOpen)}
+                className="flex items-center gap-3 px-4 py-2 rounded-lg hover:bg-slate-100 transition-colors"
+              >
+                <div className="w-9 h-9 bg-gradient-to-br from-cyan-400 to-emerald-500 rounded-full flex items-center justify-center shadow-md">
+                  <User size={18} className="text-white" />
+                </div>
+                <div className="text-left">
                   <p className="text-sm font-semibold text-slate-800">{user.name}</p>
-                  <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
+                  <p className="text-xs text-slate-500">{user.email}</p>
                 </div>
-                <button
-                  onClick={() => {
-                    setShowSettings(true);
-                    setIsMenuOpen(false);
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-700 hover:bg-slate-50 transition-colors text-sm"
-                >
-                  <Moon size={16} />
-                  <span>Appearance & Settings</span>
-                </button>
-                <div className="border-t border-slate-100 my-1"></div>
-                <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors text-sm">
-                  <LogOut size={16} />
-                  <span>Logout</span>
-                </button>
-              </div>
-            )}
+                <ChevronDown size={18} className={`text-slate-400 transition-transform ${isMenuOpen ? "rotate-180" : ""}`} />
+              </button>
 
-            {showSettings && (
-              <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50">
-                <div className="px-4 py-3 border-b border-slate-100">
-                  <button onClick={() => { setShowSettings(false); setIsMenuOpen(true); }} className="text-sm text-slate-500 hover:text-slate-700 mb-2">Back</button>
-                  <p className="text-sm font-semibold text-slate-800">Appearance & Settings</p>
-                </div>
-                <div className="px-4 py-3">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Theme</p>
-                  <div className="space-y-1">
-                    {themeOptions.map(({ value, label, icon: Icon }) => (
-                      <button
-                        key={value}
-                        onClick={() => setTheme(value)}
-                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${theme === value ? "bg-cyan-50 text-cyan-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
-                      >
-                        <Icon size={16} />
-                        <span className="flex-1 text-left">{label}</span>
-                        {theme === value && <Check size={16} className="text-cyan-600" />}
-                      </button>
-                    ))}
+              {isMenuOpen && !showSettings && (
+                <div className="absolute right-0 mt-2 w-64 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50">
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <p className="text-sm font-semibold text-slate-800">{user.name}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{user.email}</p>
                   </div>
-                </div>
-                <div className="border-t border-slate-100"></div>
-                <div className="px-4 py-3">
-                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Display</p>
                   <button
-                    onClick={() => setCompactMode(!compactMode)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${compactMode ? "bg-cyan-50 text-cyan-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                    onClick={() => {
+                      setShowSettings(true);
+                      setIsMenuOpen(false);
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-slate-700 hover:bg-slate-50 transition-colors text-sm"
                   >
-                    {compactMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-                    <span className="flex-1 text-left">Compact Mode</span>
-                    {compactMode && <Check size={16} className="text-cyan-600" />}
+                    <Moon size={16} />
+                    <span>Appearance & Settings</span>
+                  </button>
+                  <div className="border-t border-slate-100 my-1"></div>
+                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors text-sm">
+                    <LogOut size={16} />
+                    <span>Logout</span>
                   </button>
                 </div>
-                <div className="border-t border-slate-100 my-1"></div>
-                <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors text-sm">
-                  <LogOut size={16} />
-                  <span>Logout</span>
-                </button>
-              </div>
-            )}
-          </div>
+              )}
+
+              {showSettings && (
+                <div className="absolute right-0 mt-2 w-72 bg-white rounded-lg shadow-xl border border-slate-200 py-2 z-50">
+                  <div className="px-4 py-3 border-b border-slate-100">
+                    <button onClick={() => { setShowSettings(false); setIsMenuOpen(true); }} className="text-sm text-slate-500 hover:text-slate-700 mb-2">Back</button>
+                    <p className="text-sm font-semibold text-slate-800">Appearance & Settings</p>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Theme</p>
+                    <div className="space-y-1">
+                      {themeOptions.map(({ value, label, icon: Icon }) => (
+                        <button
+                          key={value}
+                          onClick={() => setTheme(value)}
+                          className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${theme === value ? "bg-cyan-50 text-cyan-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                        >
+                          <Icon size={16} />
+                          <span className="flex-1 text-left">{label}</span>
+                          {theme === value && <Check size={16} className="text-cyan-600" />}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="border-t border-slate-100"></div>
+                  <div className="px-4 py-3">
+                    <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Display</p>
+                    <button
+                      onClick={() => setCompactMode(!compactMode)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors text-sm ${compactMode ? "bg-cyan-50 text-cyan-700 font-medium" : "text-slate-700 hover:bg-slate-50"}`}
+                    >
+                      {compactMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                      <span className="flex-1 text-left">Compact Mode</span>
+                      {compactMode && <Check size={16} className="text-cyan-600" />}
+                    </button>
+                  </div>
+                  <div className="border-t border-slate-100 my-1"></div>
+                  <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-2.5 text-red-600 hover:bg-red-50 transition-colors text-sm">
+                    <LogOut size={16} />
+                    <span>Logout</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : null}
         </div>
       </header>
     </>
